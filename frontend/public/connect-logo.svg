@@ -1,0 +1,31 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="112" fill="#ffffff"/>
+  <circle cx="133" cy="58" r="33" fill="#ff7628"/>
+  <circle cx="61" cy="278" r="31" fill="#35a7de"/>
+  <circle cx="448" cy="149" r="30" fill="#a82d83"/>
+  <circle cx="350" cy="440" r="36" fill="#9aad34"/>
+  <path d="M229 60c55 6 99 42 117 92 8 23 9 47 5 69-37-47-86-72-149-75-2-36 6-65 27-86Z" fill="url(#orange)"/>
+  <path d="M45 230c30-52 88-81 146-73 25 4 47 13 66 27-60 3-109 27-148 75-29-1-51-10-64-29Z" fill="url(#blue)"/>
+  <path d="M469 192c-24 55-78 91-137 89-26-1-50-9-70-22 59-10 105-40 138-92 29-2 52 5 69 25Z" fill="url(#magenta)"/>
+  <path d="M184 447c-54-25-89-80-87-139 1-26 9-49 22-69 10 59 40 105 92 138 2 29-6 52-27 70Z" fill="url(#green)"/>
+  <path d="M145 228c17-28 53-43 86-32 17 5 32 17 42 31 12-15 30-24 50-24 27 0 51 17 61 42-30 42-77 69-129 71-49 2-94-20-122-57 1-11 5-21 12-31Z" fill="#ffffff"/>
+  <text x="256" y="277" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="900" fill="#262b2f" letter-spacing="1">CONNECT</text>
+  <defs>
+    <linearGradient id="orange" x1="204" y1="64" x2="357" y2="210" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff8a26"/>
+      <stop offset="1" stop-color="#f04c49"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="45" y1="222" x2="248" y2="177" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#36aee2"/>
+      <stop offset="1" stop-color="#2166b1"/>
+    </linearGradient>
+    <linearGradient id="magenta" x1="270" y1="264" x2="465" y2="187" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#cf2b82"/>
+      <stop offset="1" stop-color="#7a236e"/>
+    </linearGradient>
+    <linearGradient id="green" x1="125" y1="245" x2="196" y2="445" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c4d044"/>
+      <stop offset="1" stop-color="#677a32"/>
+    </linearGradient>
+  </defs>
+</svg>

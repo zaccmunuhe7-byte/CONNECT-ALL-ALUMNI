@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+backend/.env
+frontend/.env
+uploads/*
+!uploads/.gitkeep
+!uploads/default-avatar.png
+.local-postgres
+.local-postgres.log
+.DS_Store
