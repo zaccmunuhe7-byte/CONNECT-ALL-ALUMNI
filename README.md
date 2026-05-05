@@ -129,4 +129,66 @@ Change this before any real deployment.
 - CSRF protection should be enabled if refresh tokens are moved to cookies in production.
 - Run behind HTTPS in production and set `NODE_ENV=production`.
 - Use object storage such as S3/R2 for media in production; local uploads are for development.
+
+## Deployment Guidance
+
+### Can this be deployed on Vercel?
+The current full-stack platform cannot be deployed entirely on Vercel because the backend is a persistent Express API with Socket.IO and PostgreSQL. Vercel is great for the frontend static site, but the backend needs a dedicated server host.
+
+### Recommended production deployment
+- Backend: Render.com, Railway.app, Fly.io, or any Node.js host with PostgreSQL support.
+- Database: Managed PostgreSQL on Render/Railway, or an external PostgreSQL provider.
+- Frontend: Vercel (static site), Render static site, or Netlify.
+
+### Deploy frontend to Vercel
+Use the `frontend` directory as the Vercel project root.
+
+Set these values in Vercel:
+- Framework Preset: `Vite`
+- Build Command: `npm install && npm run build`
+- Output Directory: `dist`
+- Environment Variables:
+  - `VITE_API_URL=https://<your-backend-url>`
+
+A `frontend/vercel.json` file has been added so Vercel can serve the frontend from the `dist` directory.
+
+### Deploy backend to Render
+Create a Render Web Service from the `backend` directory.
+
+- Environment: Node
+- Build Command: `npm install && npm run build`
+- Start Command: `npm start`
+- Environment Variables:
+  - `PORT=4000`
+  - `CLIENT_ORIGIN=https://<your-frontend-url>`
+  - `CLIENT_ORIGINS=https://<your-frontend-url>`
+  - `DATABASE_URL=postgresql://<user>:<pass>@<host>:<port>/<db>`
+  - `JWT_ACCESS_SECRET=<secure-secret>`
+  - `JWT_REFRESH_SECRET=<secure-secret>`
+  - `ACCESS_TOKEN_TTL=15m`
+  - `REFRESH_TOKEN_TTL=7d`
+  - `UPLOAD_DIR=/tmp/uploads`
+
+### Local verification
+Run:
+
+```bash
+cd /home/zaccy/CONNECT_ALUMNI
+npm install
+npm run build
+npm start
+```
+
+Then verify:
+- Backend health: `http://localhost:4000/`
+- Frontend: `http://localhost:5173/`
+- Health endpoint: `http://localhost:4000/health`
+
+### Best practice for your current stack
+The easiest professional deployment path is:
+1. Frontend on Vercel
+2. Backend on Render/Railway
+3. PostgreSQL on Render/Railway or external managed database
+
+That keeps the frontend fast and static while the backend remains a full server with real-time messaging and secure database access.
 # CONNECT-ALL-ALUMNI

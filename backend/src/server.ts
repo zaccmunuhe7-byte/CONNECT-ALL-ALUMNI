@@ -33,5 +33,5 @@ io.on('connection', async (socket) => {
 app.set('io', io);
 
 server.listen(env.PORT, () => {
-  console.log(`CONNECT_ALUMNI API listening on http://localhost:${env.PORT}`);
+  console.log(`CONNECT_ALUMNI API listening on port ${env.PORT}`);
 });

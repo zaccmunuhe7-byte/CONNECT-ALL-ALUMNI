@@ -31,6 +31,7 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use('/uploads', express.static(env.UPLOAD_DIR));
 
+  app.get('/', (_req, res) => res.json({ ok: true, service: 'CONNECT_ALUMNI API' }));
   app.get('/health', (_req, res) => res.json({ ok: true }));
   app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30 }));
   app.use('/api/auth', authRouter);
