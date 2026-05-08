@@ -47,6 +47,20 @@ authRouter.post('/refresh', validate(z.object({
   }
 });
 
+authRouter.post('/appeal', validate(z.object({
+  body: z.object({
+    email: z.string().email(),
+    password: z.string().min(1),
+    reason: z.string().min(10).max(1000)
+  })
+})), async (req, res, next) => {
+  try {
+    res.json(await service.submitAppeal(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ─── Forgot Password Flow ─────────────────────
 
 // Step 1: Request password reset OTP

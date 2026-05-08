@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { query } from '../../db/pool.js';
 import { env } from '../../config/env.js';
+import { sendOtpEmail } from '../../utils/mailer.js';
 import { AppError } from '../../utils/errors.js';
 import type { AuthUser } from '../../middleware/auth.js';
 
@@ -137,6 +138,26 @@ export async function refresh(refreshToken: string) {
   return { accessToken: signAccessToken(authUser), refreshToken: nextRefreshToken, user: authUser };
 }
 
+export async function submitAppeal(input: { email: string; password: string; reason: string }) {
+  const result = await query<DbUser>(
+    'SELECT id, password_hash, status FROM users WHERE email = $1',
+    [input.email]
+  );
+  const user = result.rows[0];
+  if (!user) throw new AppError(401, 'No account found with this email address', 'USER_NOT_FOUND');
+
+  const ok = await bcrypt.compare(input.password, user.password_hash);
+  if (!ok) throw new AppError(401, 'Wrong password', 'WRONG_PASSWORD');
+
+  if (user.status === 'ACTIVE') {
+    throw new AppError(400, 'This account is not suspended or deleted.', 'ACCOUNT_ACTIVE');
+  }
+
+  await query('UPDATE users SET appeal_reason = $1, updated_at = now() WHERE id = $2', [input.reason, user.id]);
+
+  return { message: 'Your appeal has been submitted to the admin for review.' };
+}
+
 // ─── Forgot Password Flow ─────────────────────
 
 /** Generate a 6-digit OTP */
@@ -177,9 +198,9 @@ export async function requestPasswordReset(input: { identifier: string }) {
     [user.id, otpHash, method]
   );
 
-  // Simulated sending — in production, integrate with real email/SMS service
+  // Send OTP via email (real email) or SMS (console log for now)
   if (method === 'email') {
-    console.log(`\n📧 PASSWORD RESET OTP for ${user.email}: ${otp}\n`);
+    await sendOtpEmail(user.email, otp, user.full_name);
   } else {
     console.log(`\n📱 PASSWORD RESET OTP sent to ${identifier}: ${otp}\n`);
   }

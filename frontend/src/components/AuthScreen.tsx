@@ -37,7 +37,9 @@ export function AuthScreen() {
   const [forgotDestination, setForgotDestination] = useState('');
 
   // Account status alert
-  const [accountAlert, setAccountAlert] = useState<{ type: string; message: string } | null>(null);
+  const [accountAlert, setAccountAlert] = useState<{ type: string; message: string; email?: string; password?: string } | null>(null);
+  const [appealReason, setAppealReason] = useState('');
+  const [appealSubmitted, setAppealSubmitted] = useState(false);
 
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -59,9 +61,9 @@ export function AuthScreen() {
       const msg = err.message || 'Something went wrong';
       // Check for specific error codes from our backend
       if (msg.includes('suspended') || msg.includes('Suspended')) {
-        setAccountAlert({ type: 'suspended', message: msg });
+        setAccountAlert({ type: 'suspended', message: msg, email: String(form.get('email')), password: String(form.get('password')) });
       } else if (msg.includes('deleted') || msg.includes('Deleted') || msg.includes('permanently deleted')) {
-        setAccountAlert({ type: 'deleted', message: msg });
+        setAccountAlert({ type: 'deleted', message: msg, email: String(form.get('email')), password: String(form.get('password')) });
       } else if (msg.includes('Wrong password')) {
         setError(msg);
       } else if (msg.includes('No account found')) {
@@ -98,11 +100,6 @@ export function AuthScreen() {
     setError('');
     setLoading(true);
     try {
-      let profilePictureUrl: string | undefined;
-      if (avatarFile) {
-        const uploaded = await uploadFile(avatarFile, '/api/upload');
-        profilePictureUrl = uploaded.url;
-      }
       await register({
         fullName,
         email,
@@ -111,9 +108,8 @@ export function AuthScreen() {
         highSchool,
         university: university || undefined,
         currentWorkplace: currentWorkplace || undefined,
-        bio: bio || undefined,
-        profilePictureUrl
-      });
+        bio: bio || undefined
+      }, avatarFile);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -181,6 +177,26 @@ export function AuthScreen() {
     }
   }
 
+  async function submitAppeal() {
+    if (!accountAlert?.email || !accountAlert?.password || appealReason.length < 10) {
+      setError('Please enter a valid reason (min 10 characters)');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await api('/api/auth/appeal', {
+        method: 'POST',
+        body: JSON.stringify({ email: accountAlert.email, password: accountAlert.password, reason: appealReason })
+      });
+      setAppealSubmitted(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to submit appeal');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function resetToLogin() {
     setMode('login');
     setStep(1);
@@ -242,9 +258,28 @@ export function AuthScreen() {
             <div className="account-alert-content">
               <h3>{accountAlert.type === 'suspended' ? 'Account Suspended' : 'Account Deleted'}</h3>
               <p>{accountAlert.message}</p>
-              <small>Contact the admin at <strong>alumniconnectadmin@</strong> to request reactivation.</small>
+              
+              {!appealSubmitted ? (
+                <div style={{ marginTop: 12 }}>
+                  <p style={{ fontSize: 13, marginBottom: 8 }}>You can submit an appeal to the admin to request reactivation:</p>
+                  <textarea 
+                    value={appealReason} 
+                    onChange={e => setAppealReason(e.target.value)} 
+                    placeholder="Why should your account be reactivated?"
+                    style={{ width: '100%', minHeight: 60, marginBottom: 8, padding: 8, borderRadius: 6, border: '1px solid var(--border)' }}
+                  />
+                  <button className="btn btn-sm btn-primary" onClick={submitAppeal} disabled={loading}>
+                    {loading ? 'Submitting...' : 'Submit Appeal'}
+                  </button>
+                  {error && <p className="error-msg" style={{ marginTop: 4 }}>{error}</p>}
+                </div>
+              ) : (
+                <div style={{ marginTop: 12, padding: 12, background: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)', borderRadius: 6 }}>
+                  ✅ Your appeal has been submitted successfully and is pending admin review.
+                </div>
+              )}
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => setAccountAlert(null)}>✕</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setAccountAlert(null); setAppealSubmitted(false); setAppealReason(''); }}>✕</button>
           </div>
         )}
 

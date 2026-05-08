@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAdmin, requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { query } from '../../db/pool.js';
+import { sendAccountStatusEmail } from '../../utils/mailer.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -14,12 +15,14 @@ adminRouter.get('/users', async (_req, res, next) => {
         u.date_of_birth AS "dateOfBirth",
         u.email_verified_at AS "emailVerifiedAt",
         u.last_login_at AS "lastLoginAt",
-        u.status_reason AS "statusReason",
+        u.status_reason AS "statusReason", u.appeal_reason AS "appealReason",
         p.phone_number AS "phoneNumber", p.primary_school AS "primarySchool", p.high_school AS "highSchool",
         p.university, p.current_job AS "currentJob", p.current_workplace AS "currentWorkplace",
         p.past_jobs AS "pastJobs", p.work_experience AS "workExperience",
         p.profile_picture_url AS "profilePictureUrl", p.email_visibility AS "emailVisibility",
-        p.phone_visibility AS "phoneVisibility", u.created_at AS "createdAt", p.bio
+        p.phone_visibility AS "phoneVisibility", u.created_at AS "createdAt", p.bio,
+        (SELECT count(*)::int FROM posts WHERE author_id = u.id) AS "postCount",
+        (SELECT count(*)::int FROM connections WHERE (requester_id = u.id OR addressee_id = u.id) AND status = 'ACCEPTED') AS "connectionCount"
        FROM users u JOIN profiles p ON p.user_id = u.id
        ORDER BY u.created_at DESC`
     );
@@ -38,7 +41,9 @@ adminRouter.get('/stats', async (_req, res, next) => {
         count(*) FILTER (WHERE status = 'SUSPENDED')::int AS suspended,
         count(*) FILTER (WHERE status = 'DELETED')::int AS deleted,
         count(*) FILTER (WHERE last_login_at > now() - interval '24 hours')::int AS "recentLogins",
-        count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS "newThisWeek"
+        count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS "newThisWeek",
+        count(*) FILTER (WHERE created_at > now() - interval '30 days')::int AS "newThisMonth",
+        count(*) FILTER (WHERE created_at > now() - interval '365 days')::int AS "newThisYear"
       FROM users`),
       query(`SELECT count(*)::int AS total,
         count(*) FILTER (WHERE moderation_status = 'VISIBLE')::int AS visible,
@@ -92,7 +97,7 @@ adminRouter.patch('/users/:userId/status', validate(z.object({
 
     // Update user status and reason
     await query(
-      'UPDATE users SET status = $1, status_reason = $2, updated_at = now() WHERE id = $3',
+      'UPDATE users SET status = $1, status_reason = $2, appeal_reason = CASE WHEN $1 = \'ACTIVE\' THEN NULL ELSE appeal_reason END, updated_at = now() WHERE id = $3',
       [status, reason || null, userId]
     );
 
@@ -126,15 +131,18 @@ adminRouter.patch('/users/:userId/status', validate(z.object({
       );
     }
 
-    // Log the email notification (in production, use real email service)
+    // Send real email notification
     const userInfo = await query<{ email: string; full_name: string }>(
       'SELECT email, full_name FROM users WHERE id = $1',
       [userId]
     );
     if (userInfo.rows[0]) {
-      console.log(`\n📧 ACCOUNT ${status} NOTIFICATION sent to ${userInfo.rows[0].email}:`);
-      console.log(`   Subject: ${notifTitle}`);
-      console.log(`   Body: ${notifBody}\n`);
+      await sendAccountStatusEmail(
+        userInfo.rows[0].email,
+        userInfo.rows[0].full_name,
+        status,
+        reason
+      );
     }
 
     res.json({ ok: true });
@@ -151,6 +159,16 @@ adminRouter.patch('/posts/:postId/moderation', validate(z.object({
       req.body.moderationStatus,
       req.params.postId
     ]);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Delete a post permanently
+adminRouter.delete('/posts/:postId', async (req, res, next) => {
+  try {
+    await query('DELETE FROM posts WHERE id = $1', [req.params.postId]);
     res.json({ ok: true });
   } catch (error) {
     next(error);
@@ -174,6 +192,49 @@ adminRouter.delete('/users/:userId', async (req, res, next) => {
 
     await query('DELETE FROM users WHERE id = $1', [userId]);
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Clear a user's appeal (reject it)
+adminRouter.patch('/users/:userId/clear-appeal', async (req, res, next) => {
+  try {
+    await query('UPDATE users SET appeal_reason = NULL, updated_at = now() WHERE id = $1', [req.params.userId]);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get single user full detail (all info, even private)
+adminRouter.get('/users/:userId/detail', async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.full_name AS "fullName", u.email, u.role, u.status,
+        u.date_of_birth AS "dateOfBirth",
+        u.last_login_at AS "lastLoginAt",
+        u.status_reason AS "statusReason", u.appeal_reason AS "appealReason",
+        u.created_at AS "createdAt", u.updated_at AS "updatedAt",
+        p.phone_number AS "phoneNumber", p.primary_school AS "primarySchool", p.high_school AS "highSchool",
+        p.university, p.current_job AS "currentJob", p.current_workplace AS "currentWorkplace",
+        p.past_jobs AS "pastJobs", p.work_experience AS "workExperience",
+        p.profile_picture_url AS "profilePictureUrl", p.email_visibility AS "emailVisibility",
+        p.phone_visibility AS "phoneVisibility", p.dob_visibility AS "dobVisibility",
+        p.bio,
+        p.github_url AS "githubUrl", p.linkedin_url AS "linkedinUrl",
+        p.twitter_url AS "twitterUrl", p.instagram_url AS "instagramUrl",
+        p.facebook_url AS "facebookUrl", p.tiktok_url AS "tiktokUrl",
+        p.portfolio_url AS "portfolioUrl",
+        (SELECT count(*)::int FROM posts WHERE author_id = u.id) AS "postCount",
+        (SELECT count(*)::int FROM connections WHERE (requester_id = u.id OR addressee_id = u.id) AND status = 'ACCEPTED') AS "connectionCount",
+        (SELECT count(*)::int FROM messages WHERE sender_id = u.id) AS "messageCount"
+       FROM users u JOIN profiles p ON p.user_id = u.id
+       WHERE u.id = $1`,
+      [req.params.userId]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: { message: 'User not found' } });
+    res.json(result.rows[0]);
   } catch (error) {
     next(error);
   }

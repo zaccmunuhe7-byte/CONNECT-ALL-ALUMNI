@@ -15,6 +15,7 @@ export function notFound(_req: Request, _res: Response, next: NextFunction) {
 }
 
 export function errorHandler(err: Error, _req: Request, res: Response, _next: NextFunction) {
+  if (!(err instanceof AppError)) console.error('❌ Unhandled error:', err);
   const appError = err instanceof AppError ? err : new AppError(500, 'Internal server error');
   res.status(appError.statusCode).json({
     error: {

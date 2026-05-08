@@ -16,7 +16,7 @@ type RegisterInput = {
 type AuthContextValue = {
   session: AuthSession | null;
   login(email: string, password: string): Promise<void>;
-  register(input: RegisterInput): Promise<void>;
+  register(input: RegisterInput, avatarFile?: File | null): Promise<void>;
   logout(): void;
 };
 
@@ -54,11 +54,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ email, password })
       }));
     },
-    async register(input: RegisterInput) {
+    async register(input: RegisterInput, avatarFile?: File | null) {
       await accept(await api<AuthSession>('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify(input)
       }));
+      if (avatarFile) {
+        const fd = new FormData();
+        fd.append('avatar', avatarFile);
+        await api('/api/profiles/me/avatar', { method: 'POST', body: fd }).catch(console.error);
+      }
     },
     logout: doLogout
   }), [session]);

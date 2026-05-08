@@ -44,7 +44,7 @@ export function ProfileSection({ me, onSave, flash }: { me: Profile | null; onSa
     });
 
     // Don't send fullName if not changing or if on cooldown
-    if (!canChangeName && data.fullName && data.fullName !== me.fullName) {
+    if (!canChangeName && data.fullName && data.fullName !== me?.fullName) {
       flash(`Name change not allowed for ${nameChangeCooldown} more day${nameChangeCooldown !== 1 ? 's' : ''}`, 'error');
       return;
     }

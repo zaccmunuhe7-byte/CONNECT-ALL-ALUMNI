@@ -38,8 +38,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO users (full_name, email, password_hash, role, last_login_at)
 VALUES (
   'Admin',
-  'alumniconnectadmin@',
-  '$2a$12$JG4Co5NTWBe2jrEepardpuWDZP66MGrJOByGxJQnq3iNuxcjTsxVi',
+  'admin.alumniconnec1@gmail.com',
+  '$2a$12$6xefySkZ.DhsrFFwXfa0ZOIVC1niH5lvkPzN1wGv3rhP.0A6coR16',
   'ADMIN',
   now()
 )
@@ -48,5 +48,5 @@ ON CONFLICT (email) DO UPDATE SET role = 'ADMIN';
 -- Create profile for admin if not exists
 INSERT INTO profiles (user_id, bio)
 SELECT id, 'Platform Administrator'
-FROM users WHERE email = 'alumniconnectadmin@'
+FROM users WHERE email = 'admin.alumniconnec1@gmail.com'
 ON CONFLICT (user_id) DO NOTHING;
