@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Briefcase, MapPin, Plus, Building2, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
 type Opportunity = {
   id: string; title: string; description: string; company: string;
@@ -9,6 +10,7 @@ type Opportunity = {
 };
 
 export function OpportunitiesSection({ flash }: { flash: (m: string, t?: 'success'|'error') => void }) {
+  const { session } = useAuth();
   const [items, setItems] = useState<Opportunity[]>([]);
   const [showForm, setShowForm] = useState(false);
 
@@ -27,6 +29,17 @@ export function OpportunitiesSection({ flash }: { flash: (m: string, t?: 'succes
       })
     });
     e.currentTarget.reset(); setShowForm(false); flash('Opportunity posted!'); load();
+  }
+
+  async function deleteOpportunity(id: string) {
+    if (!confirm('Delete this opportunity?')) return;
+    try {
+      await api(`/api/opportunities/${id}`, { method: 'DELETE' });
+      flash('Opportunity deleted');
+      load();
+    } catch (err: any) {
+      flash(err.message || 'Failed to delete', 'error');
+    }
   }
 
   function timeAgo(d: string) {
@@ -64,7 +77,18 @@ export function OpportunitiesSection({ flash }: { flash: (m: string, t?: 'succes
       </div>
       {items.map(o => (
         <article className="opportunity-card" key={o.id}>
-          <h3>{o.title}</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <h3>{o.title}</h3>
+            {session?.user.id === o.author.id && (
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => deleteOpportunity(o.id)}
+                title="Delete opportunity"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+          </div>
           <div className="meta">
             <span><Building2 size={13}/> {o.company}</span>
             {o.location && <span><MapPin size={13}/> {o.location}</span>}

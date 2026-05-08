@@ -1,16 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Search, UserPlus, MessageSquare } from 'lucide-react';
+import { Search, UserPlus, Clock, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { Profile } from '../pages/Dashboard';
 
+type SentRequest = { connectionId: string; userId: string };
+
 export function DiscoverSection({ userId, flash }: { userId: string; flash: (m: string, t?: 'success'|'error') => void }) {
-  const [suggestions, setSuggestions] = useState<(Profile & { connectionId?: string })[]>([]);
+  const [suggestions, setSuggestions] = useState<Profile[]>([]);
   const [results, setResults] = useState<Profile[]>([]);
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
   const [school, setSchool] = useState('');
   const [workplace, setWorkplace] = useState('');
 
-  useEffect(() => { api<Profile[]>('/api/connections/suggestions').then(setSuggestions).catch(() => {}); }, []);
+  // Lightbox for profile picture
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<Profile[]>('/api/connections/suggestions').then(setSuggestions).catch(() => {});
+    // Load sent requests to track pending state
+    api<(Profile & { connectionId: string })[]>('/api/connections/sent').then(sent => {
+      setSentRequests(new Set(sent.map(s => s.userId)));
+    }).catch(() => {});
+  }, []);
 
   async function search(e: React.FormEvent) {
     e.preventDefault();
@@ -26,14 +38,23 @@ export function DiscoverSection({ userId, flash }: { userId: string; flash: (m: 
     try {
       await api('/api/connections/request', { method: 'POST', body: JSON.stringify({ addresseeId }) });
       flash('Connection request sent!');
-      setSuggestions(s => s.filter(p => p.userId !== addresseeId));
+      // Mark as pending
+      setSentRequests(prev => new Set(prev).add(addresseeId));
     } catch (e: any) { flash(e.message, 'error'); }
   }
 
   function Card({ person, showConnect = true }: { person: Profile; showConnect?: boolean }) {
+    const isPending = sentRequests.has(person.userId);
+
     return (
       <article className="profile-card">
-        <img src={person.media.profilePictureUrl} alt="" />
+        <img
+          src={person.media.profilePictureUrl}
+          alt=""
+          className="clickable"
+          onClick={() => setLightboxUrl(person.media.profilePictureUrl)}
+          title="Click to view full size"
+        />
         <div className="profile-card-info">
           <strong>{person.fullName}</strong>
           <span>{person.education.university || person.education.highSchool || person.education.primarySchool || ''}</span>
@@ -41,7 +62,15 @@ export function DiscoverSection({ userId, flash }: { userId: string; flash: (m: 
         </div>
         {showConnect && person.userId !== userId && (
           <div className="profile-card-actions">
-            <button className="btn btn-primary btn-sm" onClick={() => connect(person.userId)}><UserPlus size={14}/> Connect</button>
+            {isPending ? (
+              <button className="btn btn-secondary btn-sm pending-btn" disabled>
+                <Clock size={14}/> Pending
+              </button>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={() => connect(person.userId)}>
+                <UserPlus size={14}/> Connect
+              </button>
+            )}
           </div>
         )}
       </article>
@@ -50,6 +79,16 @@ export function DiscoverSection({ userId, flash }: { userId: string; flash: (m: 
 
   return (
     <>
+      {/* Profile Picture Lightbox */}
+      {lightboxUrl && (
+        <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+          <button className="lightbox-close" onClick={() => setLightboxUrl(null)}>
+            <X size={24} />
+          </button>
+          <img src={lightboxUrl} alt="Full size" className="lightbox-image" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
       <div className="panel">
         <h2 className="panel-title">Search People</h2>
         <form className="search-bar" onSubmit={search}>

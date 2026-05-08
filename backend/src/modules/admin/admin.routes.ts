@@ -14,6 +14,7 @@ adminRouter.get('/users', async (_req, res, next) => {
         u.date_of_birth AS "dateOfBirth",
         u.email_verified_at AS "emailVerifiedAt",
         u.last_login_at AS "lastLoginAt",
+        u.status_reason AS "statusReason",
         p.phone_number AS "phoneNumber", p.primary_school AS "primarySchool", p.high_school AS "highSchool",
         p.university, p.current_job AS "currentJob", p.current_workplace AS "currentWorkplace",
         p.past_jobs AS "pastJobs", p.work_experience AS "workExperience",
@@ -35,6 +36,7 @@ adminRouter.get('/stats', async (_req, res, next) => {
         count(*)::int AS total,
         count(*) FILTER (WHERE status = 'ACTIVE')::int AS active,
         count(*) FILTER (WHERE status = 'SUSPENDED')::int AS suspended,
+        count(*) FILTER (WHERE status = 'DELETED')::int AS deleted,
         count(*) FILTER (WHERE last_login_at > now() - interval '24 hours')::int AS "recentLogins",
         count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS "newThisWeek"
       FROM users`),
@@ -77,11 +79,64 @@ adminRouter.get('/posts', async (_req, res, next) => {
   }
 });
 
+// Suspend or reactivate a user — with reason and notification
 adminRouter.patch('/users/:userId/status', validate(z.object({
-  body: z.object({ status: z.enum(['ACTIVE', 'SUSPENDED', 'DELETED']) })
+  body: z.object({
+    status: z.enum(['ACTIVE', 'SUSPENDED', 'DELETED']),
+    reason: z.string().max(500).optional()
+  })
 })), async (req, res, next) => {
   try {
-    await query('UPDATE users SET status = $1, updated_at = now() WHERE id = $2', [req.body.status, req.params.userId]);
+    const { status, reason } = req.body;
+    const userId = req.params.userId;
+
+    // Update user status and reason
+    await query(
+      'UPDATE users SET status = $1, status_reason = $2, updated_at = now() WHERE id = $3',
+      [status, reason || null, userId]
+    );
+
+    // Revoke all tokens if suspending/deleting so user is immediately logged out
+    if (status === 'SUSPENDED' || status === 'DELETED') {
+      await query(
+        'UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL',
+        [userId]
+      );
+    }
+
+    // Create notification for the user
+    let notifTitle = '';
+    let notifBody = '';
+    if (status === 'SUSPENDED') {
+      notifTitle = 'Account Suspended';
+      notifBody = `Your account has been suspended by an administrator${reason ? ': ' + reason : '.'}. Contact the admin to request reactivation.`;
+    } else if (status === 'DELETED') {
+      notifTitle = 'Account Deleted';
+      notifBody = `Your account has been permanently deleted by an administrator${reason ? ': ' + reason : '.'}. Contact the admin if you wish to be reinstated.`;
+    } else if (status === 'ACTIVE') {
+      notifTitle = 'Account Reactivated';
+      notifBody = 'Your account has been reactivated by an administrator. You can now log in again.';
+    }
+
+    if (notifTitle) {
+      await query(
+        `INSERT INTO notifications (user_id, type, title, body)
+         VALUES ($1, $2, $3, $4)`,
+        [userId, `account_${status.toLowerCase()}`, notifTitle, notifBody]
+      );
+    }
+
+    // Log the email notification (in production, use real email service)
+    const userInfo = await query<{ email: string; full_name: string }>(
+      'SELECT email, full_name FROM users WHERE id = $1',
+      [userId]
+    );
+    if (userInfo.rows[0]) {
+      console.log(`\n📧 ACCOUNT ${status} NOTIFICATION sent to ${userInfo.rows[0].email}:`);
+      console.log(`   Subject: ${notifTitle}`);
+      console.log(`   Body: ${notifBody}\n`);
+    }
+
     res.json({ ok: true });
   } catch (error) {
     next(error);
@@ -102,10 +157,22 @@ adminRouter.patch('/posts/:postId/moderation', validate(z.object({
   }
 });
 
-// Delete a user entirely
+// Delete a user entirely (permanent)
 adminRouter.delete('/users/:userId', async (req, res, next) => {
   try {
-    await query('DELETE FROM users WHERE id = $1', [req.params.userId]);
+    const userId = req.params.userId;
+
+    // Get user info before deleting for notification log
+    const userInfo = await query<{ email: string; full_name: string }>(
+      'SELECT email, full_name FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userInfo.rows[0]) {
+      console.log(`\n📧 ACCOUNT PERMANENTLY DELETED for ${userInfo.rows[0].email} (${userInfo.rows[0].full_name})\n`);
+    }
+
+    await query('DELETE FROM users WHERE id = $1', [userId]);
     res.json({ ok: true });
   } catch (error) {
     next(error);

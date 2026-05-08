@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { MessageCircle, Image, Trash2, Globe, Users, Send, Mic, X } from 'lucide-react';
+import { MessageCircle, Image, Trash2, Globe, Users, Send, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { Profile } from '../pages/Dashboard';
 
@@ -32,6 +32,9 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
   const [openReactionPicker, setOpenReactionPicker] = useState<string | null>(null);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
 
+  // Lightbox state for full-size photo viewing
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
   // Voice note state for posts
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
@@ -50,6 +53,15 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
       return () => document.removeEventListener('click', handler);
     }
   }, [openReactionPicker]);
+
+  // Close lightbox on Escape
+  useEffect(() => {
+    if (lightboxUrl) {
+      const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightboxUrl(null); };
+      document.addEventListener('keydown', handler);
+      return () => document.removeEventListener('keydown', handler);
+    }
+  }, [lightboxUrl]);
 
   async function createPost(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -113,6 +125,17 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
     await api(`/api/posts/${id}`, { method: 'DELETE' }); load();
   }
 
+  async function deleteComment(postId: string, commentId: string) {
+    if (!confirm('Delete this comment?')) return;
+    try {
+      await api(`/api/posts/${postId}/comments/${commentId}`, { method: 'DELETE' });
+      flash('Comment deleted');
+      load();
+    } catch (err: any) {
+      flash(err.message || 'Failed to delete comment', 'error');
+    }
+  }
+
   function toggleComments(postId: string) {
     setExpandedComments(prev => {
       const next = new Set(prev);
@@ -149,6 +172,16 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
 
   return (
     <>
+      {/* ─── Full-size Image Lightbox ─── */}
+      {lightboxUrl && (
+        <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+          <button className="lightbox-close" onClick={() => setLightboxUrl(null)}>
+            <X size={24} />
+          </button>
+          <img src={lightboxUrl} alt="Full size" className="lightbox-image" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
       <div className="panel">
         <h2 className="panel-title" style={{marginBottom:14}}>Alumni Feed</h2>
         <form onSubmit={createPost} className="post-composer">
@@ -213,7 +246,13 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
       {posts.map(post => (
         <article className="post" key={post.id}>
           <div className="post-header">
-            <img src={post.author.profilePictureUrl} alt="" />
+            <img
+              src={post.author.profilePictureUrl}
+              alt=""
+              className="post-author-avatar clickable"
+              onClick={() => setLightboxUrl(post.author.profilePictureUrl)}
+              title="Click to view full size"
+            />
             <div className="post-header-info">
               <strong>{post.author.fullName}</strong>
               <small>
@@ -231,7 +270,15 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
             )}
           </div>
           <p className="post-body">{post.body}</p>
-          {post.imageUrl && <img src={post.imageUrl} alt="" className="post-image" />}
+          {post.imageUrl && (
+            <img
+              src={post.imageUrl}
+              alt=""
+              className="post-image clickable"
+              onClick={() => setLightboxUrl(post.imageUrl!)}
+              title="Click to view full size"
+            />
+          )}
 
           {/* Reaction summary */}
           {post.reactionCount > 0 && (
@@ -286,8 +333,19 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
                 <div className="post-comments">
                   {post.comments.slice(0, expandedComments.has(post.id) ? undefined : 2).map(c => (
                     <div className="comment" key={c.id}>
-                      <strong>{c.authorName}</strong>
-                      <span>{c.body}</span>
+                      <div className="comment-content">
+                        <strong>{c.authorName}</strong>
+                        <span>{c.body}</span>
+                      </div>
+                      {me?.userId === c.authorId && (
+                        <button
+                          className="btn btn-ghost btn-icon comment-delete-btn"
+                          onClick={() => deleteComment(post.id, c.id)}
+                          title="Delete comment"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
                   ))}
                   {!expandedComments.has(post.id) && post.comments.length > 2 && (

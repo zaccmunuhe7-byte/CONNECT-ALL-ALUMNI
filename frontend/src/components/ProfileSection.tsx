@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Camera, Save } from 'lucide-react';
+import { Camera, Save, AlertCircle } from 'lucide-react';
 import { api } from '../api/client';
 import type { Profile } from '../pages/Dashboard';
 
@@ -8,6 +8,13 @@ export function ProfileSection({ me, onSave, flash }: { me: Profile | null; onSa
   const [uploading, setUploading] = useState(false);
 
   if (!me) return <div className="loading">Loading profile...</div>;
+
+  // Calculate username change restriction
+  const usernameChangedAt = (me as any).usernameChangedAt;
+  const nameChangeCooldown = usernameChangedAt
+    ? Math.max(0, Math.ceil((new Date(usernameChangedAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000)))
+    : 0;
+  const canChangeName = nameChangeCooldown === 0;
 
   async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -35,6 +42,13 @@ export function ProfileSection({ me, onSave, flash }: { me: Profile | null; onSa
         data[k] = v || null;
       }
     });
+
+    // Don't send fullName if not changing or if on cooldown
+    if (!canChangeName && data.fullName && data.fullName !== me.fullName) {
+      flash(`Name change not allowed for ${nameChangeCooldown} more day${nameChangeCooldown !== 1 ? 's' : ''}`, 'error');
+      return;
+    }
+
     try {
       await api('/api/profiles/me', { method: 'PATCH', body: JSON.stringify(data) });
       flash('Profile saved!');
@@ -57,8 +71,26 @@ export function ProfileSection({ me, onSave, flash }: { me: Profile | null; onSa
       </div>
       <form className="profile-grid" onSubmit={save}>
         <div className="field-group">
-          <label className="field-label">Full Name</label>
-          <input name="fullName" defaultValue={me.fullName} required />
+          <label className="field-label">
+            Full Name
+            {!canChangeName && (
+              <span className="name-cooldown-badge">
+                <AlertCircle size={11} /> {nameChangeCooldown}d left
+              </span>
+            )}
+          </label>
+          <input
+            name="fullName"
+            defaultValue={me.fullName}
+            required
+            disabled={!canChangeName}
+            title={!canChangeName ? `You can change your name in ${nameChangeCooldown} days` : undefined}
+          />
+          {!canChangeName && (
+            <p className="name-cooldown-hint">
+              Name changes are allowed once every 30 days. You can change it again in {nameChangeCooldown} day{nameChangeCooldown !== 1 ? 's' : ''}.
+            </p>
+          )}
         </div>
         <div className="field-group">
           <label className="field-label">Phone Number</label>

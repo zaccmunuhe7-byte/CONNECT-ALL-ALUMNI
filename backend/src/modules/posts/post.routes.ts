@@ -140,6 +140,20 @@ postRouter.post('/:postId/comments', validate(z.object({
   }
 });
 
+// Delete own comment
+postRouter.delete('/:postId/comments/:commentId', async (req, res, next) => {
+  try {
+    const result = await query(
+      'DELETE FROM post_comments WHERE id = $1 AND author_id = $2 RETURNING id',
+      [req.params.commentId, req.user!.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: { message: 'Comment not found or not yours' } });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Delete own post
 postRouter.delete('/:postId', async (req, res, next) => {
   try {

@@ -14,6 +14,7 @@ import { postRouter } from './modules/posts/post.routes.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { opportunityRouter } from './modules/opportunities/opportunity.routes.js';
 import { uploadRouter } from './modules/uploads/upload.routes.js';
+import { notificationRouter } from './modules/notifications/notification.routes.js';
 import { errorHandler, notFound } from './utils/errors.js';
 
 function allowCorsOrigin(origin: string | undefined, callback: (err: Error | null, origin?: boolean) => void) {
@@ -46,6 +47,7 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
   app.use('/api/opportunities', opportunityRouter);
   app.use('/api/upload', uploadRouter);
+  app.use('/api/notifications', notificationRouter);
 
   app.use(notFound);
   app.use(errorHandler);

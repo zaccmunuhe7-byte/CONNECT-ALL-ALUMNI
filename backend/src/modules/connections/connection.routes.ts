@@ -77,6 +77,25 @@ connectionRouter.post('/request', validate(z.object({
       `INSERT INTO connections (requester_id, addressee_id) VALUES ($1, $2) RETURNING id, status`,
       [req.user!.id, req.body.addresseeId]
     );
+
+    // Notify the addressee about the connection request
+    const requesterName = await query<{ full_name: string }>(
+      'SELECT full_name FROM users WHERE id = $1',
+      [req.user!.id]
+    );
+    if (requesterName.rows[0]) {
+      await query(
+        `INSERT INTO notifications (user_id, type, title, body, reference_id)
+         VALUES ($1, 'connection_request', 'New Connection Request',
+                 $2, $3)`,
+        [
+          req.body.addresseeId,
+          `${requesterName.rows[0].full_name} wants to connect with you.`,
+          result.rows[0].id
+        ]
+      );
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -86,13 +105,32 @@ connectionRouter.post('/request', validate(z.object({
 // Accept connection request
 connectionRouter.patch('/:connectionId/accept', async (req, res, next) => {
   try {
-    const result = await query(
+    const result = await query<{ id: string; status: string; requester_id: string }>(
       `UPDATE connections SET status = 'ACCEPTED', updated_at = now()
        WHERE id = $1 AND addressee_id = $2 AND status = 'PENDING'
-       RETURNING id, status`,
+       RETURNING id, status, requester_id`,
       [req.params.connectionId, req.user!.id]
     );
     if (!result.rowCount) throw new AppError(404, 'Connection request not found', 'NOT_FOUND');
+
+    // Notify the original requester that their connection was accepted
+    const acceptorName = await query<{ full_name: string }>(
+      'SELECT full_name FROM users WHERE id = $1',
+      [req.user!.id]
+    );
+    if (acceptorName.rows[0]) {
+      await query(
+        `INSERT INTO notifications (user_id, type, title, body, reference_id)
+         VALUES ($1, 'connection_accepted', 'Connection Accepted',
+                 $2, $3)`,
+        [
+          result.rows[0].requester_id,
+          `You are now connected to ${acceptorName.rows[0].full_name}! You can now message each other.`,
+          result.rows[0].id
+        ]
+      );
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     next(error);

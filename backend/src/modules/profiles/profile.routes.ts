@@ -12,6 +12,7 @@ profileRouter.use(requireAuth);
 
 const profileSelect = `
   SELECT u.id AS user_id, u.full_name, u.email, u.role, u.status, u.date_of_birth,
+    u.username_changed_at,
     p.phone_number, p.primary_school, p.high_school, p.university,
     p.primary_school_start_year, p.primary_school_end_year, p.primary_school_current,
     p.high_school_start_year, p.high_school_end_year, p.high_school_current,
@@ -34,7 +35,10 @@ profileRouter.get('/me', async (req, res, next) => {
       req.user!.id,
       req.user!.role === 'ADMIN'
     ]);
-    res.json(serializeProfile(result.rows[0]));
+    const profile = serializeProfile(result.rows[0]);
+    // Include username_changed_at for the frontend to enforce the 30-day restriction
+    (profile as any).usernameChangedAt = result.rows[0].username_changed_at;
+    res.json(profile);
   } catch (error) {
     next(error);
   }
@@ -90,10 +94,48 @@ profileRouter.patch('/me', validate(z.object({
 })), async (req, res, next) => {
   try {
     const body = req.body;
+
+    // ─── 30-day Username Change Restriction ─────────────────
+    if (body.fullName) {
+      // Check if the name is actually changing
+      const currentUser = await query<{ full_name: string; username_changed_at: string | null }>(
+        'SELECT full_name, username_changed_at FROM users WHERE id = $1',
+        [req.user!.id]
+      );
+      const current = currentUser.rows[0];
+
+      if (current && current.full_name !== body.fullName) {
+        // Check if within 30-day cooldown
+        if (current.username_changed_at) {
+          const changedAt = new Date(current.username_changed_at);
+          const thirtyDaysLater = new Date(changedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+          if (new Date() < thirtyDaysLater) {
+            const daysLeft = Math.ceil((thirtyDaysLater.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+            throw new AppError(400,
+              `You can change your name again in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Name changes are allowed once every 30 days.`,
+              'USERNAME_COOLDOWN'
+            );
+          }
+        }
+      }
+    }
+
     if (body.fullName || body.dateOfBirth !== undefined) {
       const sets: string[] = ['updated_at = now()'];
       const vals: unknown[] = [];
-      if (body.fullName) { vals.push(body.fullName); sets.push(`full_name = $${vals.length}`); }
+
+      if (body.fullName) {
+        // Check if name is actually changing
+        const currentUser = await query<{ full_name: string }>('SELECT full_name FROM users WHERE id = $1', [req.user!.id]);
+        const isNameChanging = currentUser.rows[0] && currentUser.rows[0].full_name !== body.fullName;
+
+        vals.push(body.fullName);
+        sets.push(`full_name = $${vals.length}`);
+
+        if (isNameChanging) {
+          sets.push(`username_changed_at = now()`);
+        }
+      }
       if (body.dateOfBirth !== undefined) { vals.push(body.dateOfBirth); sets.push(`date_of_birth = $${vals.length}`); }
       vals.push(req.user!.id);
       await query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${vals.length}`, vals);

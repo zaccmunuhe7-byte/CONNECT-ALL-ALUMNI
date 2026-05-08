@@ -1,11 +1,13 @@
 import { useState, useRef } from 'react';
-import { GraduationCap, Network, ShieldCheck, Sparkles, Camera, ArrowRight, ArrowLeft, School, Building2, User } from 'lucide-react';
+import { GraduationCap, Network, ShieldCheck, Sparkles, Camera, ArrowRight, ArrowLeft, School, User, KeyRound, Mail, Phone, Lock, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { uploadFile } from '../api/client';
+import { uploadFile, api } from '../api/client';
+
+type ForgotStep = 'input' | 'otp' | 'newpass' | 'done';
 
 export function AuthScreen() {
   const { login, register } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [step, setStep] = useState(1); // 1=account, 2=schools, 3=profile pic & bio
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,6 +25,20 @@ export function AuthScreen() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Forgot password fields
+  const [forgotStep, setForgotStep] = useState<ForgotStep>('input');
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotMethod, setForgotMethod] = useState('');
+  const [forgotDestination, setForgotDestination] = useState('');
+
+  // Account status alert
+  const [accountAlert, setAccountAlert] = useState<{ type: string; message: string } | null>(null);
+
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (f) {
@@ -34,12 +50,25 @@ export function AuthScreen() {
   async function submitLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
+    setAccountAlert(null);
     setLoading(true);
     const form = new FormData(event.currentTarget);
     try {
       await login(String(form.get('email')), String(form.get('password')));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } catch (err: any) {
+      const msg = err.message || 'Something went wrong';
+      // Check for specific error codes from our backend
+      if (msg.includes('suspended') || msg.includes('Suspended')) {
+        setAccountAlert({ type: 'suspended', message: msg });
+      } else if (msg.includes('deleted') || msg.includes('Deleted') || msg.includes('permanently deleted')) {
+        setAccountAlert({ type: 'deleted', message: msg });
+      } else if (msg.includes('Wrong password')) {
+        setError(msg);
+      } else if (msg.includes('No account found')) {
+        setError(msg);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -92,16 +121,91 @@ export function AuthScreen() {
     }
   }
 
+  // ─── Forgot Password Handlers ─────────────────────
+  async function requestOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const result = await api<{ method: string; destination: string; message: string }>(
+        '/api/auth/forgot-password',
+        { method: 'POST', body: JSON.stringify({ identifier: forgotIdentifier }) }
+      );
+      setForgotMethod(result.method);
+      setForgotDestination(result.destination);
+      setForgotMessage(result.message);
+      setForgotStep('otp');
+    } catch (err: any) {
+      setError(err.message || 'Failed to send OTP');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function verifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const result = await api<{ resetToken: string; message: string }>(
+        '/api/auth/verify-otp',
+        { method: 'POST', body: JSON.stringify({ identifier: forgotIdentifier, otp: forgotOtp }) }
+      );
+      setResetToken(result.resetToken);
+      setForgotMessage(result.message);
+      setForgotStep('newpass');
+    } catch (err: any) {
+      setError(err.message || 'Invalid OTP');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitNewPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (forgotNewPassword.length < 8) { setError('Password must be at least 8 characters'); return; }
+    if (forgotNewPassword !== forgotConfirmPassword) { setError('Passwords do not match'); return; }
+    setLoading(true);
+    try {
+      const result = await api<{ message: string }>(
+        '/api/auth/reset-password',
+        { method: 'POST', body: JSON.stringify({ resetToken, newPassword: forgotNewPassword }) }
+      );
+      setForgotMessage(result.message);
+      setForgotStep('done');
+    } catch (err: any) {
+      setError(err.message || 'Failed to reset password');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function resetToLogin() {
     setMode('login');
     setStep(1);
     setError('');
+    setAccountAlert(null);
   }
 
   function resetToRegister() {
     setMode('register');
     setStep(1);
     setError('');
+    setAccountAlert(null);
+  }
+
+  function startForgotPassword() {
+    setMode('forgot');
+    setForgotStep('input');
+    setForgotIdentifier('');
+    setForgotOtp('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setResetToken('');
+    setForgotMessage('');
+    setError('');
+    setAccountAlert(null);
   }
 
   const stepLabels = ['Account', 'School Info', 'Profile'];
@@ -121,23 +225,167 @@ export function AuthScreen() {
           <span><ShieldCheck size={14} /> Private by Design</span>
           <span><Sparkles size={14} /> Real Community</span>
         </div>
-        <div className="segmented">
-          <button className={mode === 'login' ? 'active' : ''} onClick={resetToLogin}>Login</button>
-          <button className={mode === 'register' ? 'active' : ''} onClick={resetToRegister}>Register</button>
-        </div>
 
+        {mode !== 'forgot' && (
+          <div className="segmented">
+            <button className={mode === 'login' ? 'active' : ''} onClick={resetToLogin}>Login</button>
+            <button className={mode === 'register' ? 'active' : ''} onClick={resetToRegister}>Register</button>
+          </div>
+        )}
+
+        {/* ─── Account Suspension/Deletion Alert ─── */}
+        {accountAlert && (
+          <div className={`account-alert ${accountAlert.type}`}>
+            <div className="account-alert-icon">
+              {accountAlert.type === 'suspended' ? '⚠️' : '🚫'}
+            </div>
+            <div className="account-alert-content">
+              <h3>{accountAlert.type === 'suspended' ? 'Account Suspended' : 'Account Deleted'}</h3>
+              <p>{accountAlert.message}</p>
+              <small>Contact the admin at <strong>alumniconnectadmin@</strong> to request reactivation.</small>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setAccountAlert(null)}>✕</button>
+          </div>
+        )}
+
+        {/* ─── Login Form ─── */}
         {mode === 'login' && (
           <form onSubmit={submitLogin} className="stack">
             <input name="email" placeholder="Email address" type="email" required />
             <input name="password" placeholder="Password" type="password" required />
-            {error && <p className="error-msg">{error}</p>}
+            {error && (
+              <div className="login-error-box">
+                <p className="error-msg">{error}</p>
+                {(error.includes('Wrong password') || error.includes('try again')) && (
+                  <button type="button" className="forgot-link" onClick={startForgotPassword}>
+                    <KeyRound size={13} /> Forgotten password?
+                  </button>
+                )}
+              </div>
+            )}
             <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
               <GraduationCap size={17} />
               {loading ? 'Please wait...' : 'Login'}
             </button>
+            <button type="button" className="forgot-link" onClick={startForgotPassword} style={{ marginTop: 4 }}>
+              <KeyRound size={13} /> Forgotten password?
+            </button>
           </form>
         )}
 
+        {/* ─── Forgot Password Flow ─── */}
+        {mode === 'forgot' && (
+          <div className="forgot-password-flow fade-in">
+            <div className="forgot-header">
+              <button className="btn btn-ghost btn-sm" onClick={resetToLogin}>
+                <ArrowLeft size={14} /> Back to Login
+              </button>
+              <h2>Reset Password</h2>
+            </div>
+
+            {/* Step 1: Enter email or phone */}
+            {forgotStep === 'input' && (
+              <form onSubmit={requestOtp} className="stack">
+                <div className="forgot-icon-wrap">
+                  <KeyRound size={28} />
+                </div>
+                <p className="forgot-desc">
+                  Enter the email address or phone number you used to register. We'll send you a 6-digit OTP code to verify your identity.
+                </p>
+                <input
+                  placeholder="Email address or phone number"
+                  value={forgotIdentifier}
+                  onChange={e => setForgotIdentifier(e.target.value)}
+                  required
+                />
+                {error && <p className="error-msg">{error}</p>}
+                <button className="btn btn-primary" disabled={loading} style={{ width: '100%' }}>
+                  {loading ? 'Sending...' : 'Send OTP Code'}
+                </button>
+              </form>
+            )}
+
+            {/* Step 2: Enter OTP */}
+            {forgotStep === 'otp' && (
+              <form onSubmit={verifyOtp} className="stack">
+                <div className="forgot-icon-wrap">
+                  {forgotMethod === 'email' ? <Mail size={28} /> : <Phone size={28} />}
+                </div>
+                <div className="otp-sent-info">
+                  <p>OTP sent via <strong>{forgotMethod}</strong> to:</p>
+                  <span className="otp-destination">{forgotDestination}</span>
+                </div>
+                <p className="forgot-desc">{forgotMessage}</p>
+                <input
+                  className="otp-input"
+                  placeholder="Enter 6-digit OTP"
+                  value={forgotOtp}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setForgotOtp(val);
+                  }}
+                  maxLength={6}
+                  pattern="[0-9]{6}"
+                  required
+                  style={{ textAlign: 'center', fontSize: 24, letterSpacing: 12, fontWeight: 800 }}
+                />
+                {error && <p className="error-msg">{error}</p>}
+                <button className="btn btn-primary" disabled={loading || forgotOtp.length < 6} style={{ width: '100%' }}>
+                  {loading ? 'Verifying...' : 'Verify OTP'}
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setForgotStep('input'); setError(''); }}>
+                  Didn't receive it? Send again
+                </button>
+              </form>
+            )}
+
+            {/* Step 3: New password */}
+            {forgotStep === 'newpass' && (
+              <form onSubmit={submitNewPassword} className="stack">
+                <div className="forgot-icon-wrap">
+                  <Lock size={28} />
+                </div>
+                <p className="forgot-desc">Create a new strong password for your account.</p>
+                <input
+                  type="password"
+                  placeholder="New password (min 8 chars)"
+                  value={forgotNewPassword}
+                  onChange={e => setForgotNewPassword(e.target.value)}
+                  minLength={8}
+                  required
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={forgotConfirmPassword}
+                  onChange={e => setForgotConfirmPassword(e.target.value)}
+                  minLength={8}
+                  required
+                />
+                {error && <p className="error-msg">{error}</p>}
+                <button className="btn btn-primary" disabled={loading} style={{ width: '100%' }}>
+                  {loading ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </form>
+            )}
+
+            {/* Step 4: Done */}
+            {forgotStep === 'done' && (
+              <div className="stack forgot-done">
+                <div className="forgot-icon-wrap success">
+                  <CheckCircle2 size={36} />
+                </div>
+                <h3>Password Reset Successful!</h3>
+                <p>{forgotMessage}</p>
+                <button className="btn btn-primary" onClick={resetToLogin} style={{ width: '100%' }}>
+                  <GraduationCap size={17} /> Back to Login
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── Register Form ─── */}
         {mode === 'register' && (
           <>
             {/* Step Indicator */}
@@ -239,11 +487,13 @@ export function AuthScreen() {
         )}
 
         <p style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: 'var(--text-muted)' }}>
-          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-          <button onClick={() => mode === 'login' ? resetToRegister() : resetToLogin()}
-            style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>
-            {mode === 'login' ? 'Register' : 'Login'}
-          </button>
+          {mode === 'login' ? "Don't have an account? " : mode === 'register' ? 'Already have an account? ' : ''}
+          {mode !== 'forgot' && (
+            <button onClick={() => mode === 'login' ? resetToRegister() : resetToLogin()}
+              style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>
+              {mode === 'login' ? 'Register' : 'Login'}
+            </button>
+          )}
         </p>
       </section>
     </main>

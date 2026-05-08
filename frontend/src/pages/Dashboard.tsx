@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { LogOut, UserRound, Search, Send, Briefcase, Shield, Users, Home, Bell } from 'lucide-react';
+import { LogOut, UserRound, Search, Send, Briefcase, Shield, Users, Home, Bell, X, Check, CheckCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { FeedSection } from '../components/FeedSection';
@@ -19,6 +19,17 @@ export type Profile = {
   professional: { currentJob?: string; currentWorkplace?: string; pastJobs?: any[]; workExperience?: string; };
   media: { profilePictureUrl: string; images: any[]; };
   privacy?: { emailVisibility: string; phoneVisibility: string; dobVisibility?: string; };
+  usernameChangedAt?: string;
+};
+
+type Notification = {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  referenceId?: string;
+  isRead: boolean;
+  createdAt: string;
 };
 
 export function Dashboard() {
@@ -27,6 +38,11 @@ export function Dashboard() {
   const [me, setMe] = useState<Profile | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [notice, setNotice] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  // Notifications
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   const loadMe = useCallback(async () => {
     try {
@@ -37,11 +53,57 @@ export function Dashboard() {
     } catch (e: any) { setNotice({ msg: e.message, type: 'error' }); }
   }, []);
 
-  useEffect(() => { loadMe(); }, [loadMe]);
+  const loadNotifications = useCallback(async () => {
+    try {
+      const [notifs, countResult] = await Promise.all([
+        api<Notification[]>('/api/notifications'),
+        api<{ count: number }>('/api/notifications/unread-count')
+      ]);
+      setNotifications(notifs);
+      setUnreadCount(countResult.count);
+    } catch {}
+  }, []);
+
+  useEffect(() => { loadMe(); loadNotifications(); }, [loadMe, loadNotifications]);
+
+  // Poll for new notifications every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(loadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [loadNotifications]);
 
   useEffect(() => { if (notice) { const t = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(t); } }, [notice]);
 
   const flash = (msg: string, type: 'success' | 'error' = 'success') => setNotice({ msg, type });
+
+  async function markNotifRead(id: string) {
+    await api(`/api/notifications/${id}/read`, { method: 'PATCH' });
+    loadNotifications();
+  }
+
+  async function markAllRead() {
+    await api('/api/notifications/read-all', { method: 'PATCH' });
+    loadNotifications();
+  }
+
+  function timeAgo(d: string) {
+    const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+    return `${Math.floor(s/86400)}d ago`;
+  }
+
+  function getNotifIcon(type: string) {
+    switch (type) {
+      case 'connection_request': return '🤝';
+      case 'connection_accepted': return '✅';
+      case 'account_suspended': return '⚠️';
+      case 'account_deleted': return '🚫';
+      case 'account_active': return '🎉';
+      default: return '🔔';
+    }
+  }
 
   const navItems = [
     { id: 'feed', icon: Home, label: 'Feed' },
@@ -69,6 +131,15 @@ export function Dashboard() {
           ))}
         </nav>
         <div className="sidebar-footer">
+          {/* Notification Bell */}
+          <button
+            className="nav-item notification-bell-btn"
+            onClick={() => { setShowNotifPanel(!showNotifPanel); if (!showNotifPanel) loadNotifications(); }}
+          >
+            <Bell size={18} />
+            <span>Notifications</span>
+            {unreadCount > 0 && <span className="badge">{unreadCount}</span>}
+          </button>
           {me && (
             <div className="sidebar-user">
               <img src={me.media.profilePictureUrl} alt="" />
@@ -83,6 +154,49 @@ export function Dashboard() {
       </aside>
       <section className="main-content">
         {notice && <div className={`notice ${notice.type}`}>{notice.msg}</div>}
+
+        {/* Notification Panel */}
+        {showNotifPanel && (
+          <div className="notification-panel fade-in">
+            <div className="notif-panel-header">
+              <h3>Notifications</h3>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {unreadCount > 0 && (
+                  <button className="btn btn-ghost btn-sm" onClick={markAllRead} title="Mark all as read">
+                    <CheckCheck size={14} /> Mark all read
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-icon" onClick={() => setShowNotifPanel(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="notif-panel-list">
+              {notifications.length === 0 ? (
+                <div className="empty-state"><p>No notifications yet</p></div>
+              ) : (
+                notifications.map(n => (
+                  <div
+                    key={n.id}
+                    className={`notif-item ${n.isRead ? '' : 'unread'}`}
+                    onClick={() => { if (!n.isRead) markNotifRead(n.id); }}
+                  >
+                    <span className="notif-icon">{getNotifIcon(n.type)}</span>
+                    <div className="notif-item-content">
+                      <strong>{n.title}</strong>
+                      <p>{n.body}</p>
+                      <small>{timeAgo(n.createdAt)}</small>
+                    </div>
+                    {!n.isRead && (
+                      <span className="notif-unread-dot" />
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
         {view === 'feed' && <FeedSection me={me} flash={flash} />}
         {view === 'discover' && <DiscoverSection userId={session!.user.id} flash={flash} />}
         {view === 'connections' && <ConnectionsSection userId={session!.user.id} flash={flash} onUpdate={loadMe} />}

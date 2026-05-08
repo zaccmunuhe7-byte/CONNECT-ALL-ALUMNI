@@ -36,7 +36,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     headers: { ...headers, ...options.headers as Record<string, string> }
   });
   if (!response.ok) {
-    if (response.status === 401 && onUnauthorized) {
+    // Only trigger auto-logout for 401 on non-auth endpoints (auth endpoints
+    // return 401/403 for wrong password, suspended accounts, etc.)
+    const isAuthEndpoint = path.startsWith('/api/auth/');
+    if (response.status === 401 && onUnauthorized && !isAuthEndpoint && accessToken) {
       // Token expired or invalid — force logout
       onUnauthorized();
       throw new Error('Session expired. Please login again.');

@@ -46,3 +46,46 @@ authRouter.post('/refresh', validate(z.object({
     next(error);
   }
 });
+
+// ─── Forgot Password Flow ─────────────────────
+
+// Step 1: Request password reset OTP
+authRouter.post('/forgot-password', validate(z.object({
+  body: z.object({
+    identifier: z.string().min(3).max(255)  // email or phone number
+  })
+})), async (req, res, next) => {
+  try {
+    res.json(await service.requestPasswordReset(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Step 2: Verify OTP
+authRouter.post('/verify-otp', validate(z.object({
+  body: z.object({
+    identifier: z.string().min(3).max(255),
+    otp: z.string().length(6)
+  })
+})), async (req, res, next) => {
+  try {
+    res.json(await service.verifyOtp(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Step 3: Reset password
+authRouter.post('/reset-password', validate(z.object({
+  body: z.object({
+    resetToken: z.string().min(10),
+    newPassword: z.string().min(8).max(128)
+  })
+})), async (req, res, next) => {
+  try {
+    res.json(await service.resetPassword(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
