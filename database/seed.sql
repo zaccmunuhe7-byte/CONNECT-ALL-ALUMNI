@@ -1,7 +1,7 @@
--- password for all demo users: password123
+-- password for demo users: password123 | admin password: Admin@Connect2024
 WITH demo_users(full_name, email, password_hash, role) AS (
   VALUES
-    ('Admin User', 'admin@connectalumni.local', '$2a$12$Cx9VbcMDw2ahOCKVyN2U8OHpxxr3icfF4yj901cqSKtIeeKJzTmwO', 'ADMIN'::user_role),
+    ('Platform Admin', 'admin@connectalumni.app', '$2a$12$JqMHKVvuce31YOADi0vDKe72wuYtgVj0xM2Lb.ckM4gPWtT8G5ueO', 'ADMIN'::user_role),
     ('Amina Okoth', 'amina@example.com', '$2a$12$/v1NcDx.Rxh1NtwaJ6Ga2Ofm9iZURCTc2XxRrQCS0LeopyeOEBiVy', 'USER'::user_role),
     ('Brian Mwangi', 'brian@example.com', '$2a$12$/v1NcDx.Rxh1NtwaJ6Ga2Ofm9iZURCTc2XxRrQCS0LeopyeOEBiVy', 'USER'::user_role),
     ('Caroline Njeri', 'caroline@example.com', '$2a$12$/v1NcDx.Rxh1NtwaJ6Ga2Ofm9iZURCTc2XxRrQCS0LeopyeOEBiVy', 'USER'::user_role),
@@ -20,7 +20,7 @@ SET full_name = EXCLUDED.full_name,
 
 INSERT INTO profiles (user_id)
 SELECT id FROM users
-WHERE email IN ('admin@connectalumni.local', 'amina@example.com', 'brian@example.com', 'caroline@example.com', 'david@example.com', 'esther@example.com')
+WHERE email IN ('admin@connectalumni.app', 'amina@example.com', 'brian@example.com', 'caroline@example.com', 'david@example.com', 'esther@example.com')
 ON CONFLICT (user_id) DO NOTHING;
 
 -- Admin profile
@@ -40,7 +40,7 @@ UPDATE profiles p SET
   bio = 'Platform admin ensuring safe and productive connections.',
   email_visibility = 'PUBLIC',
   phone_visibility = 'PRIVATE'
-FROM users u WHERE p.user_id = u.id AND u.email = 'admin@connectalumni.local';
+FROM users u WHERE p.user_id = u.id AND u.email = 'admin@connectalumni.app';
 
 -- Amina
 UPDATE profiles p SET
