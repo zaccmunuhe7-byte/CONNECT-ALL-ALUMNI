@@ -4,7 +4,10 @@ CREATE EXTENSION IF NOT EXISTS citext;
 CREATE TYPE user_role AS ENUM ('USER', 'ADMIN');
 CREATE TYPE user_status AS ENUM ('ACTIVE', 'SUSPENDED', 'DELETED');
 CREATE TYPE visibility AS ENUM ('PUBLIC', 'PRIVATE');
+CREATE TYPE post_visibility AS ENUM ('EVERYONE', 'CONNECTIONS');
 CREATE TYPE moderation_status AS ENUM ('VISIBLE', 'HIDDEN', 'REMOVED');
+CREATE TYPE connection_status AS ENUM ('PENDING', 'ACCEPTED', 'DECLINED');
+CREATE TYPE reaction_type AS ENUM ('like', 'love', 'clap', 'wow', 'fire');
 
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -13,7 +16,9 @@ CREATE TABLE users (
   password_hash TEXT NOT NULL,
   role user_role NOT NULL DEFAULT 'USER',
   status user_status NOT NULL DEFAULT 'ACTIVE',
+  date_of_birth DATE,
   email_verified_at TIMESTAMPTZ,
+  last_login_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -22,15 +27,26 @@ CREATE TABLE profiles (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   phone_number TEXT,
   primary_school TEXT,
+  primary_school_start_year INT,
+  primary_school_end_year INT,
+  primary_school_current BOOLEAN NOT NULL DEFAULT false,
   high_school TEXT,
+  high_school_start_year INT,
+  high_school_end_year INT,
+  high_school_current BOOLEAN NOT NULL DEFAULT false,
   university TEXT,
+  university_start_year INT,
+  university_end_year INT,
+  university_current BOOLEAN NOT NULL DEFAULT false,
   current_job TEXT,
   current_workplace TEXT,
   past_jobs JSONB NOT NULL DEFAULT '[]',
   work_experience TEXT,
   profile_picture_url TEXT NOT NULL DEFAULT '/uploads/default-avatar.png',
+  bio TEXT,
   email_visibility visibility NOT NULL DEFAULT 'PRIVATE',
   phone_visibility visibility NOT NULL DEFAULT 'PRIVATE',
+  dob_visibility visibility NOT NULL DEFAULT 'PRIVATE',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -41,6 +57,16 @@ CREATE TABLE profile_images (
   image_url TEXT NOT NULL,
   visibility visibility NOT NULL DEFAULT 'PRIVATE',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE connections (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  requester_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  addressee_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status connection_status NOT NULL DEFAULT 'PENDING',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (requester_id, addressee_id)
 );
 
 CREATE TABLE refresh_tokens (
@@ -77,7 +103,9 @@ CREATE TABLE messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  body TEXT NOT NULL,
+  body TEXT,
+  file_url TEXT,
+  file_type TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   read_at TIMESTAMPTZ
 );
@@ -86,14 +114,17 @@ CREATE TABLE posts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   body TEXT NOT NULL,
+  image_url TEXT,
+  visibility post_visibility NOT NULL DEFAULT 'EVERYONE',
   moderation_status moderation_status NOT NULL DEFAULT 'VISIBLE',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE post_likes (
+CREATE TABLE post_reactions (
   post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reaction reaction_type NOT NULL DEFAULT 'like',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (post_id, user_id)
 );
@@ -107,9 +138,25 @@ CREATE TABLE post_comments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE opportunities (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  author_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  company TEXT NOT NULL,
+  location TEXT,
+  opportunity_type TEXT NOT NULL DEFAULT 'Job',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX idx_profiles_primary_school ON profiles (lower(primary_school));
 CREATE INDEX idx_profiles_high_school ON profiles (lower(high_school));
 CREATE INDEX idx_profiles_university ON profiles (lower(university));
 CREATE INDEX idx_profiles_workplace ON profiles (lower(current_workplace));
 CREATE INDEX idx_messages_conversation_created ON messages (conversation_id, created_at);
 CREATE INDEX idx_posts_created ON posts (created_at DESC);
+CREATE INDEX idx_connections_requester ON connections (requester_id);
+CREATE INDEX idx_connections_addressee ON connections (addressee_id);
+CREATE INDEX idx_connections_status ON connections (status);
+CREATE INDEX idx_opportunities_created ON opportunities (created_at DESC);

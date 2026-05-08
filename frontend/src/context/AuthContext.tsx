@@ -1,10 +1,22 @@
-import { createContext, useContext, useMemo, useState } from 'react';
-import { api, AuthSession, clearAccessToken, setAccessToken } from '../api/client';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { api, AuthSession, clearAccessToken, setAccessToken, setOnUnauthorized } from '../api/client';
+
+type RegisterInput = {
+  fullName: string;
+  email: string;
+  password: string;
+  primarySchool: string;
+  highSchool: string;
+  university?: string;
+  currentWorkplace?: string;
+  bio?: string;
+  profilePictureUrl?: string;
+};
 
 type AuthContextValue = {
   session: AuthSession | null;
   login(email: string, password: string): Promise<void>;
-  register(fullName: string, email: string, password: string): Promise<void>;
+  register(input: RegisterInput): Promise<void>;
   logout(): void;
 };
 
@@ -23,6 +35,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('session', JSON.stringify(next));
   }
 
+  function doLogout() {
+    clearAccessToken();
+    setSession(null);
+  }
+
+  // Register the unauthorized handler so api client can auto-logout
+  useEffect(() => {
+    setOnUnauthorized(doLogout);
+    return () => setOnUnauthorized(() => {});
+  }, []);
+
   const value = useMemo<AuthContextValue>(() => ({
     session,
     async login(email, password) {
@@ -31,17 +54,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ email, password })
       }));
     },
-    async register(fullName, email, password) {
+    async register(input: RegisterInput) {
       await accept(await api<AuthSession>('/api/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ fullName, email, password })
+        body: JSON.stringify(input)
       }));
     },
-    logout() {
-      clearAccessToken();
-      localStorage.removeItem('session');
-      setSession(null);
-    }
+    logout: doLogout
   }), [session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

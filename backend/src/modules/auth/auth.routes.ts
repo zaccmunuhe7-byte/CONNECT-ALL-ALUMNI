@@ -9,7 +9,13 @@ const registerSchema = z.object({
   body: z.object({
     fullName: z.string().min(2).max(120),
     email: z.string().email(),
-    password: z.string().min(8).max(128)
+    password: z.string().min(8).max(128),
+    primarySchool: z.string().min(2).max(160),
+    highSchool: z.string().min(2).max(160),
+    university: z.string().max(160).optional().default(''),
+    currentWorkplace: z.string().max(160).optional().default(''),
+    bio: z.string().max(50).optional().default(''),
+    profilePictureUrl: z.string().optional()
   })
 });
 
@@ -21,8 +27,8 @@ authRouter.post('/register', validate(registerSchema), async (req, res, next) =>
   }
 });
 
-authRouter.post('/login', validate(registerSchema.pick({ body: true }).extend({
-  body: z.object({ email: z.string().email(), password: z.string().min(8) })
+authRouter.post('/login', validate(z.object({
+  body: z.object({ email: z.string().email(), password: z.string().min(1) })
 })), async (req, res, next) => {
   try {
     res.json(await service.login(req.body));

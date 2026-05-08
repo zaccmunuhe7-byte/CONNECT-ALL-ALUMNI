@@ -33,20 +33,45 @@ async function persistRefreshToken(userId: string, token: string) {
   );
 }
 
-export async function register(input: { fullName: string; email: string; password: string }) {
+export async function register(input: {
+  fullName: string;
+  email: string;
+  password: string;
+  primarySchool: string;
+  highSchool: string;
+  university?: string;
+  currentWorkplace?: string;
+  bio?: string;
+  profilePictureUrl?: string;
+}) {
   const existing = await query<{ id: string }>('SELECT id FROM users WHERE email = $1', [input.email]);
   if (existing.rowCount) throw new AppError(409, 'Email is already registered', 'EMAIL_EXISTS');
 
   const passwordHash = await bcrypt.hash(input.password, 12);
   const result = await query<DbUser>(
-    `INSERT INTO users (full_name, email, password_hash)
-     VALUES ($1, $2, $3)
+    `INSERT INTO users (full_name, email, password_hash, last_login_at)
+     VALUES ($1, $2, $3, now())
      RETURNING id, full_name, email, password_hash, role, status`,
     [input.fullName, input.email, passwordHash]
   );
 
   const user = result.rows[0];
-  await query('INSERT INTO profiles (user_id) VALUES ($1)', [user.id]);
+
+  // Create profile with school info, bio, and profile picture
+  await query(
+    `INSERT INTO profiles (user_id, primary_school, high_school, university, current_workplace, bio, profile_picture_url)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, '/uploads/default-avatar.png'))`,
+    [
+      user.id,
+      input.primarySchool,
+      input.highSchool,
+      input.university || null,
+      input.currentWorkplace || null,
+      input.bio || null,
+      input.profilePictureUrl || null
+    ]
+  );
+
   const authUser = { id: user.id, email: user.email, role: user.role };
   const refreshToken = createRefreshToken();
   await persistRefreshToken(user.id, refreshToken);
@@ -64,6 +89,9 @@ export async function login(input: { email: string; password: string }) {
 
   const ok = await bcrypt.compare(input.password, user.password_hash);
   if (!ok) throw new AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
+
+  // Track last login
+  await query('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id]);
 
   const authUser = { id: user.id, email: user.email, role: user.role };
   const refreshToken = createRefreshToken();

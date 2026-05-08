@@ -4,6 +4,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { query } from '../../db/pool.js';
 import { AppError } from '../../utils/errors.js';
+import { upload } from '../../middleware/upload.js';
 
 export const messageRouter = Router();
 messageRouter.use(requireAuth);
@@ -20,12 +21,14 @@ messageRouter.get('/conversations', async (req, res, next) => {
   try {
     const result = await query(
       `SELECT c.id, c.created_at AS "createdAt",
-        json_agg(json_build_object('id', u.id, 'fullName', u.full_name)) AS members,
-        max(m.created_at) AS "lastMessageAt"
+        json_agg(json_build_object('id', u.id, 'fullName', u.full_name, 'profilePictureUrl', pr.profile_picture_url)) AS members,
+        max(m.created_at) AS "lastMessageAt",
+        (SELECT body FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS "lastMessage"
        FROM conversations c
        JOIN conversation_members cm ON cm.conversation_id = c.id
        JOIN conversation_members all_cm ON all_cm.conversation_id = c.id
        JOIN users u ON u.id = all_cm.user_id
+       JOIN profiles pr ON pr.user_id = u.id
        LEFT JOIN messages m ON m.conversation_id = c.id
        WHERE cm.user_id = $1
        GROUP BY c.id
@@ -71,7 +74,9 @@ messageRouter.get('/conversations/:conversationId/messages', async (req, res, ne
       [req.params.conversationId, req.user!.id]
     );
     const result = await query(
-      `SELECT id, conversation_id AS "conversationId", sender_id AS "senderId", body, created_at AS "createdAt", read_at AS "readAt"
+      `SELECT id, conversation_id AS "conversationId", sender_id AS "senderId", body,
+        file_url AS "fileUrl", file_type AS "fileType",
+        created_at AS "createdAt", read_at AS "readAt"
        FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 200`,
       [req.params.conversationId]
     );
@@ -81,6 +86,7 @@ messageRouter.get('/conversations/:conversationId/messages', async (req, res, ne
   }
 });
 
+// Send text message
 messageRouter.post('/conversations/:conversationId/messages', validate(z.object({
   params: z.object({ conversationId: z.string().uuid() }),
   body: z.object({ body: z.string().min(1).max(2000) })
@@ -92,6 +98,30 @@ messageRouter.post('/conversations/:conversationId/messages', validate(z.object(
        VALUES ($1, $2, $3)
        RETURNING id, conversation_id AS "conversationId", sender_id AS "senderId", body, created_at AS "createdAt"`,
       [req.params.conversationId, req.user!.id, req.body.body]
+    );
+    req.app.get('io')?.to(req.params.conversationId).emit('message:new', result.rows[0]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Send file message (image, voice note, music)
+messageRouter.post('/conversations/:conversationId/files', upload.single('file'), async (req, res, next) => {
+  try {
+    await assertMember(req.params.conversationId, req.user!.id);
+    if (!req.file) throw new AppError(400, 'No file uploaded', 'NO_FILE');
+    const fileUrl = `/uploads/${req.file.filename}`;
+    const fileType = req.file.mimetype.startsWith('audio/') ? 'audio'
+      : req.file.mimetype.startsWith('image/') ? 'image'
+      : req.file.mimetype.startsWith('video/') ? 'video' : 'file';
+    const body = req.body?.body || null;
+    const result = await query(
+      `INSERT INTO messages (conversation_id, sender_id, body, file_url, file_type)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, conversation_id AS "conversationId", sender_id AS "senderId", body,
+         file_url AS "fileUrl", file_type AS "fileType", created_at AS "createdAt"`,
+      [req.params.conversationId, req.user!.id, body, fileUrl, fileType]
     );
     req.app.get('io')?.to(req.params.conversationId).emit('message:new', result.rows[0]);
     res.status(201).json(result.rows[0]);
