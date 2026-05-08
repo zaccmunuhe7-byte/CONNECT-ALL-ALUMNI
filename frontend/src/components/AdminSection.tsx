@@ -40,7 +40,7 @@ export function AdminSection({ flash }: { flash: (m: string, t?: 'success'|'erro
       const [s, u, p] = await Promise.all([
         api('/api/admin/stats'), api('/api/admin/users'), api('/api/admin/posts')
       ]);
-      setStats(s); setUsers(u); setPosts(p);
+      setStats(s as Stats); setUsers(u as AdminUser[]); setPosts(p as AdminPost[]);
     } catch (err: any) { flash(err.message || 'Failed to load admin data', 'error'); }
   }
   useEffect(() => { load(); }, []);
