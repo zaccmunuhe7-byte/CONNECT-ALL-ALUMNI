@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
-import { MessageCircle, Image, Trash2, Globe, Users, Send, X } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { MessageCircle, Image, Trash2, Globe, Users, Send, X, Share2 } from 'lucide-react';
 import { api } from '../api/client';
+import { MentionInput, renderMentions } from './MentionInput';
 import type { Profile } from '../pages/Dashboard';
 
 type Reaction = { reaction: string; count: number };
@@ -10,6 +11,8 @@ type Post = {
   reactions: Reaction[];
   myReaction: string | null;
   reactionCount: number;
+  shareCount: number;
+  myShare: boolean;
   comments: { id: string; body: string; authorId: string; authorName: string; createdAt: string }[];
 };
 
@@ -34,6 +37,9 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
 
   // Lightbox state for full-size photo viewing
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Post body with mention support
+  const [postBody, setPostBody] = useState('');
 
   // Voice note state for posts
   const [voiceRecording, setVoiceRecording] = useState(false);
@@ -66,14 +72,19 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
   async function createPost(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (posting) return; // Prevent double-click
+    if (!postBody.trim()) {
+      flash('Post body is required', 'error');
+      return;
+    }
     setPosting(true);
     setPosted(false);
     try {
-      const fd = new FormData(e.currentTarget);
+      const fd = new FormData();
+      fd.set('body', postBody);
       fd.set('visibility', visibility);
       if (imgFile) fd.append('image', imgFile);
       await api('/api/posts', { method: 'POST', body: fd });
-      e.currentTarget.reset();
+      setPostBody('');
       setImgFile(null);
       setImgPreview(null);
       setVoiceBlob(null);
@@ -110,14 +121,23 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
     load();
   }
 
-  async function comment(e: React.FormEvent<HTMLFormElement>, id: string) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const body = fd.get('body') as string;
+  async function comment(body: string, id: string) {
     if (!body.trim()) return;
     await api(`/api/posts/${id}/comments`, { method: 'POST', body: JSON.stringify({ body }) });
-    e.currentTarget.reset();
     load();
+  }
+
+  async function sharePost(postId: string) {
+    try {
+      const result = await api<{ shared: boolean }>(`/api/posts/${postId}/share`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      flash(result.shared ? 'Post shared!' : 'Share removed');
+      load();
+    } catch (err: any) {
+      flash(err.message || 'Failed to share', 'error');
+    }
   }
 
   async function deletePost(id: string) {
@@ -187,7 +207,14 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
         <form onSubmit={createPost} className="post-composer">
           <div className="post-composer-row">
             {me && <img src={me.media.profilePictureUrl} alt="" />}
-            <textarea name="body" placeholder="Share an update, thoughts, or opportunity..." required />
+            <MentionInput
+              name="body"
+              placeholder="Share an update, thoughts, or opportunity... (type @ to mention someone)"
+              required
+              multiline
+              value={postBody}
+              onChange={setPostBody}
+            />
           </div>
           {imgPreview && (
             <div className="post-image-preview-wrapper">
@@ -269,7 +296,7 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
               <button className="btn btn-ghost btn-icon" style={{marginLeft:'auto'}} onClick={() => deletePost(post.id)}><Trash2 size={15}/></button>
             )}
           </div>
-          <p className="post-body">{post.body}</p>
+          <p className="post-body">{renderMentions(post.body)}</p>
           {post.imageUrl && (
             <img
               src={post.imageUrl}
@@ -324,6 +351,13 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
             <button className="btn btn-ghost btn-sm" onClick={() => toggleComments(post.id)}>
               <MessageCircle size={15}/> {post.comments.length} Comment{post.comments.length !== 1 ? 's' : ''}
             </button>
+            <button
+              className={`btn btn-ghost btn-sm ${post.myShare ? 'shared' : ''}`}
+              onClick={() => sharePost(post.id)}
+              title={post.myShare ? 'Unshare' : 'Share'}
+            >
+              <Share2 size={15} /> {post.shareCount > 0 ? `${post.shareCount} ` : ''}Share{post.shareCount !== 1 && post.shareCount > 0 ? 's' : ''}
+            </button>
           </div>
 
           {/* Comments section - shown when expanded or has comments */}
@@ -335,7 +369,7 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
                     <div className="comment" key={c.id}>
                       <div className="comment-content">
                         <strong>{c.authorName}</strong>
-                        <span>{c.body}</span>
+                        <span>{renderMentions(c.body)}</span>
                       </div>
                       {me?.userId === c.authorId && (
                         <button
@@ -355,10 +389,16 @@ export function FeedSection({ me, flash }: { me: Profile | null; flash: (m: stri
                   )}
                 </div>
               )}
-              <form className="comment-form" onSubmit={e => comment(e, post.id)}>
-                <input name="body" placeholder="Write a comment..." required />
-                <button className="btn btn-secondary btn-sm">Comment</button>
-              </form>
+              <div className="comment-form">
+                <MentionInput
+                  placeholder="Write a comment... (type @ to mention)"
+                  required
+                  onSubmit={(body) => comment(body, post.id)}
+                />
+                <button className="btn btn-secondary btn-sm" onClick={() => {
+                  // The MentionInput handles submission via onSubmit/Enter
+                }}>Comment</button>
+              </div>
             </>
           )}
         </article>

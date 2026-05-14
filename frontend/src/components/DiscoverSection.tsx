@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Search, UserPlus, Clock, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { Profile } from '../pages/Dashboard';

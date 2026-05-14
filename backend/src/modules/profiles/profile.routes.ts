@@ -6,6 +6,9 @@ import { query } from '../../db/pool.js';
 import { AppError } from '../../utils/errors.js';
 import { serializeProfile } from './profile.serializer.js';
 import { upload } from '../../middleware/upload.js';
+import { isCloudinaryConfigured } from '../../config/cloudinary.js';
+import { cloudinaryMulter, uploadToCloudinary } from '../../middleware/cloudinary-upload.js';
+import { requireOwnerOrAdmin } from '../../middleware/privacy.js';
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth);
@@ -186,11 +189,15 @@ profileRouter.patch('/me', validate(z.object({
   }
 });
 
-// Upload profile picture
-profileRouter.post('/me/avatar', upload.single('avatar'), async (req, res, next) => {
+// Upload profile picture — uses Cloudinary when configured
+const avatarMiddleware = isCloudinaryConfigured()
+  ? [cloudinaryMulter.single('avatar'), uploadToCloudinary('avatars')]
+  : [upload.single('avatar')];
+
+profileRouter.post('/me/avatar', ...avatarMiddleware, async (req, res, next) => {
   try {
-    if (!req.file) throw new AppError(400, 'No file uploaded', 'NO_FILE');
-    const url = `/uploads/${req.file.filename}`;
+    const url = (req as any).cloudinaryUrl || (req.file ? `/uploads/${req.file.filename}` : null);
+    if (!url) throw new AppError(400, 'No file uploaded', 'NO_FILE');
     await query('UPDATE profiles SET profile_picture_url = $1, updated_at = now() WHERE user_id = $2', [url, req.user!.id]);
     res.json({ url });
   } catch (error) {

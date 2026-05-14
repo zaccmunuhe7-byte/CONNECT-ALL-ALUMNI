@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { api, AuthSession, clearAccessToken, setAccessToken, setOnUnauthorized } from '../api/client';
 
 type RegisterInput = {
@@ -15,7 +15,10 @@ type RegisterInput = {
 
 type AuthContextValue = {
   session: AuthSession | null;
+  justLoggedIn: boolean;
+  clearJustLoggedIn(): void;
   login(email: string, password: string): Promise<void>;
+  loginWithGoogle(credential: string): Promise<void>;
   register(input: RegisterInput, avatarFile?: File | null): Promise<void>;
   logout(): void;
 };
@@ -27,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const raw = localStorage.getItem('session');
     return raw ? JSON.parse(raw) : null;
   });
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
 
   async function accept(next: AuthSession) {
     setSession(next);
@@ -38,6 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   function doLogout() {
     clearAccessToken();
     setSession(null);
+    setJustLoggedIn(false);
   }
 
   // Register the unauthorized handler so api client can auto-logout
@@ -48,11 +53,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => ({
     session,
+    justLoggedIn,
+    clearJustLoggedIn: () => setJustLoggedIn(false),
     async login(email, password) {
       await accept(await api<AuthSession>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       }));
+      setJustLoggedIn(true);
+    },
+    async loginWithGoogle(credential: string) {
+      await accept(await api<AuthSession>('/api/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential })
+      }));
+      setJustLoggedIn(true);
     },
     async register(input: RegisterInput, avatarFile?: File | null) {
       await accept(await api<AuthSession>('/api/auth/register', {
@@ -64,9 +79,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fd.append('avatar', avatarFile);
         await api('/api/profiles/me/avatar', { method: 'POST', body: fd }).catch(console.error);
       }
+      setJustLoggedIn(true);
     },
     logout: doLogout
-  }), [session]);
+  }), [session, justLoggedIn]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

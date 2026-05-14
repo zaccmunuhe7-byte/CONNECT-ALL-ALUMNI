@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../../middleware/validate.js';
 import * as service from './auth.service.js';
+import { loginWithGoogle } from './google-auth.service.js';
 
 export const authRouter = Router();
 
@@ -99,6 +100,18 @@ authRouter.post('/reset-password', validate(z.object({
 })), async (req, res, next) => {
   try {
     res.json(await service.resetPassword(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── Google OAuth ─────────────────────────────────────────
+
+authRouter.post('/google', validate(z.object({
+  body: z.object({ credential: z.string().min(10) })
+})), async (req, res, next) => {
+  try {
+    res.json(await loginWithGoogle(req.body.credential));
   } catch (error) {
     next(error);
   }

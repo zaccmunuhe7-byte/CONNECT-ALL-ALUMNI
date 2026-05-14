@@ -62,3 +62,26 @@ searchRouter.get('/', validate(z.object({
     next(error);
   }
 });
+
+// Lightweight user search for @mention autocomplete
+searchRouter.get('/users', async (req, res, next) => {
+  try {
+    const q = req.query.q ? `%${String(req.query.q).toLowerCase()}%` : null;
+    if (!q) return res.json([]);
+
+    const result = await query<{ id: string; fullName: string; profilePictureUrl: string }>(
+      `SELECT u.id, u.full_name AS "fullName", p.profile_picture_url AS "profilePictureUrl"
+       FROM users u
+       JOIN profiles p ON p.user_id = u.id
+       WHERE u.status = 'ACTIVE'
+         AND u.id != $1
+         AND lower(u.full_name) LIKE $2
+       ORDER BY u.full_name ASC
+       LIMIT 10`,
+      [req.user!.id, q]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});

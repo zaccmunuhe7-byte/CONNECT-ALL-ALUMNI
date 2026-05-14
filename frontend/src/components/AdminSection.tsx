@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Shield, Ban, CheckCircle, Eye, EyeOff, Trash2, AlertTriangle, X, Users, FileText, BarChart3, Search, Mail, Phone, MapPin, School, Briefcase, Calendar, MessageSquare, Link2, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { api } from '../api/client';
 

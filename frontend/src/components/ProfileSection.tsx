@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Camera, Save, AlertCircle } from 'lucide-react';
 import { api } from '../api/client';
 import type { Profile } from '../pages/Dashboard';

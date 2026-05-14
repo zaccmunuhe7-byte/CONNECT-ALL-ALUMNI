@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { UserCheck, UserX, UserMinus, MessageSquare } from 'lucide-react';
 import { api } from '../api/client';
 import type { Profile } from '../pages/Dashboard';

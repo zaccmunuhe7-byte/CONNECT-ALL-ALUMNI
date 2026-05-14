@@ -19,6 +19,12 @@ const schema = z.object({
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
+  // Cloudinary (optional — falls back to local disk storage)
+  CLOUDINARY_CLOUD_NAME: z.string().default(''),
+  CLOUDINARY_API_KEY: z.string().default(''),
+  CLOUDINARY_API_SECRET: z.string().default(''),
+  // Google OAuth (optional)
+  GOOGLE_CLIENT_ID: z.string().default(''),
 });
 
 const parsed = schema.parse(process.env);

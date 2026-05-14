@@ -78,7 +78,7 @@ export async function register(input: {
   const refreshToken = createRefreshToken();
   await persistRefreshToken(user.id, refreshToken);
 
-  return { accessToken: signAccessToken(authUser), refreshToken, user: authUser };
+  return { accessToken: signAccessToken(authUser), refreshToken, user: { ...authUser, fullName: user.full_name } };
 }
 
 export async function login(input: { email: string; password: string }) {
@@ -116,7 +116,7 @@ export async function login(input: { email: string; password: string }) {
   const authUser = { id: user.id, email: user.email, role: user.role };
   const refreshToken = createRefreshToken();
   await persistRefreshToken(user.id, refreshToken);
-  return { accessToken: signAccessToken(authUser), refreshToken, user: authUser };
+  return { accessToken: signAccessToken(authUser), refreshToken, user: { ...authUser, fullName: user.full_name } };
 }
 
 export async function refresh(refreshToken: string) {

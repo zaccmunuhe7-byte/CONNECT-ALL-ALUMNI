@@ -4,9 +4,26 @@ import { requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { query } from '../../db/pool.js';
 import { upload } from '../../middleware/upload.js';
+import { isCloudinaryConfigured } from '../../config/cloudinary.js';
+import { cloudinaryMulter, uploadToCloudinary } from '../../middleware/cloudinary-upload.js';
+import { extractAndSaveMentions } from './mentions.service.js';
 
 export const postRouter = Router();
 postRouter.use(requireAuth);
+
+// Choose the appropriate upload middleware based on environment
+function getImageUpload() {
+  if (isCloudinaryConfigured()) {
+    return [cloudinaryMulter.single('image'), uploadToCloudinary('posts')];
+  }
+  return [upload.single('image')];
+}
+
+function getImageUrl(req: any): string | null {
+  if ((req as any).cloudinaryUrl) return (req as any).cloudinaryUrl;
+  if (req.file) return `/uploads/${req.file.filename}`;
+  return null;
+}
 
 postRouter.get('/', async (req, res, next) => {
   try {
@@ -20,6 +37,8 @@ postRouter.get('/', async (req, res, next) => {
         ) AS reactions,
         (SELECT reaction FROM post_reactions WHERE post_id = p.id AND user_id = $1) AS "myReaction",
         (SELECT count(*)::int FROM post_reactions WHERE post_id = p.id) AS "reactionCount",
+        (SELECT count(*)::int FROM post_shares WHERE post_id = p.id) AS "shareCount",
+        (SELECT count(*)::int FROM post_shares WHERE post_id = p.id AND user_id = $1) > 0 AS "myShare",
         COALESCE(json_agg(DISTINCT jsonb_build_object(
           'id', pc.id, 'body', pc.body, 'authorId', pc.author_id,
           'authorName', cu.full_name, 'createdAt', pc.created_at
@@ -52,20 +71,25 @@ postRouter.get('/', async (req, res, next) => {
 });
 
 // Create post with optional image upload and visibility
-postRouter.post('/', upload.single('image'), async (req, res, next) => {
+postRouter.post('/', ...getImageUpload(), async (req, res, next) => {
   try {
     const body = req.body?.body;
     if (!body || body.length < 1) {
       return res.status(400).json({ error: { message: 'Post body is required' } });
     }
     const visibility = req.body?.visibility === 'CONNECTIONS' ? 'CONNECTIONS' : 'EVERYONE';
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    const imageUrl = getImageUrl(req);
     const result = await query(
       `INSERT INTO posts (author_id, body, image_url, visibility) VALUES ($1, $2, $3, $4)
        RETURNING id, body, image_url AS "imageUrl", visibility, created_at AS "createdAt"`,
       [req.user!.id, body, imageUrl, visibility]
     );
-    res.status(201).json(result.rows[0]);
+
+    // Extract and save @mentions
+    const post = result.rows[0];
+    await extractAndSaveMentions(body, 'post', post.id, req.user!.id);
+
+    res.status(201).json(post);
   } catch (error) {
     next(error);
   }
@@ -134,7 +158,12 @@ postRouter.post('/:postId/comments', validate(z.object({
        RETURNING id, post_id AS "postId", body, created_at AS "createdAt"`,
       [req.params.postId, req.user!.id, req.body.body]
     );
-    res.status(201).json(result.rows[0]);
+
+    // Extract and save @mentions from comment
+    const comment = result.rows[0];
+    await extractAndSaveMentions(req.body.body, 'comment', comment.id, req.user!.id);
+
+    res.status(201).json(comment);
   } catch (error) {
     next(error);
   }
@@ -163,6 +192,57 @@ postRouter.delete('/:postId', async (req, res, next) => {
     );
     if (!result.rowCount) return res.status(404).json({ error: { message: 'Post not found' } });
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── Share a post ─────────────────────────────────────────────
+
+postRouter.post('/:postId/share', validate(z.object({
+  body: z.object({ body: z.string().max(500).optional() })
+})), async (req, res, next) => {
+  try {
+    // Check if already shared
+    const existing = await query(
+      'SELECT id FROM post_shares WHERE post_id = $1 AND user_id = $2',
+      [req.params.postId, req.user!.id]
+    );
+    if (existing.rowCount) {
+      // Unshare (toggle off)
+      await query('DELETE FROM post_shares WHERE post_id = $1 AND user_id = $2', [req.params.postId, req.user!.id]);
+      return res.json({ shared: false });
+    }
+
+    await query(
+      `INSERT INTO post_shares (post_id, user_id, body) VALUES ($1, $2, $3)
+       ON CONFLICT (post_id, user_id) DO NOTHING`,
+      [req.params.postId, req.user!.id, req.body.body || null]
+    );
+
+    // Notify the post author
+    const postAuthor = await query<{ author_id: string }>(
+      'SELECT author_id FROM posts WHERE id = $1',
+      [req.params.postId]
+    );
+    if (postAuthor.rows[0] && postAuthor.rows[0].author_id !== req.user!.id) {
+      const sharer = await query<{ full_name: string }>(
+        'SELECT full_name FROM users WHERE id = $1',
+        [req.user!.id]
+      );
+      await query(
+        `INSERT INTO notifications (user_id, type, title, body, reference_id)
+         VALUES ($1, 'post_shared', $2, $3, $4)`,
+        [
+          postAuthor.rows[0].author_id,
+          `${sharer.rows[0]?.full_name || 'Someone'} shared your post`,
+          `${sharer.rows[0]?.full_name || 'Someone'} shared your post with their network.`,
+          req.params.postId
+        ]
+      );
+    }
+
+    res.status(201).json({ shared: true });
   } catch (error) {
     next(error);
   }

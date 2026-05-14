@@ -621,4 +621,64 @@ input:disabled {
   .lightbox-image { max-width: 95vw; max-height: 80vh; }
   .notification-panel { position: fixed; inset: 0; z-index: 200; border-radius: 0; }
   .notification-bell-btn { display: none; }
+  .mention-suggestions { max-width: calc(100vw - 32px); }
 }
+
+/* ─── Google Auth Divider ─── */
+.auth-divider {
+  display: flex; align-items: center; gap: 12px; margin: 8px 0 4px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.auth-divider span {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.google-btn-container {
+  display: flex; justify-content: center; min-height: 44px;
+}
+
+/* ─── Mention Input ─── */
+.mention-input-wrapper {
+  position: relative; flex: 1; width: 100%;
+}
+.mention-input {
+  width: 100%;
+}
+.mention-suggestions {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-lg);
+  max-height: 200px; overflow-y: auto; animation: fadeIn .15s ease;
+  margin-top: 4px;
+}
+.mention-suggestion-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 14px; border: none; background: transparent;
+  color: var(--text); cursor: pointer; text-align: left;
+  transition: background var(--transition);
+}
+.mention-suggestion-item:hover,
+.mention-suggestion-item.active {
+  background: rgba(59,130,246,.08);
+}
+.mention-avatar {
+  width: 32px; height: 32px; border-radius: 10px;
+  object-fit: cover; background: var(--bg-input); flex-shrink: 0;
+}
+.mention-name {
+  font-size: 14px; font-weight: 600;
+}
+.mention-highlight {
+  color: var(--accent); font-weight: 700;
+  background: rgba(59,130,246,.08); padding: 1px 3px;
+  border-radius: 4px;
+}
+
+/* ─── Share Button ─── */
+.btn.shared {
+  color: var(--accent) !important;
+}
+

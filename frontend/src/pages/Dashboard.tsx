@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { LogOut, UserRound, Search, Send, Briefcase, Shield, Users, Home, Bell, X, Check, CheckCheck } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -33,7 +33,7 @@ type Notification = {
 };
 
 export function Dashboard() {
-  const { session, logout } = useAuth();
+  const { session, logout, justLoggedIn, clearJustLoggedIn } = useAuth();
   const [view, setView] = useState('feed');
   const [me, setMe] = useState<Profile | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -75,6 +75,15 @@ export function Dashboard() {
   useEffect(() => { if (notice) { const t = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(t); } }, [notice]);
 
   const flash = (msg: string, type: 'success' | 'error' = 'success') => setNotice({ msg, type });
+
+  // Welcome toast on login
+  useEffect(() => {
+    if (justLoggedIn && session?.user) {
+      const name = session.user.fullName || session.user.email;
+      flash(`WELCOME to ALUMNI CONNECT ${name}`);
+      clearJustLoggedIn();
+    }
+  }, [justLoggedIn]);
 
   async function markNotifRead(id: string) {
     await api(`/api/notifications/${id}/read`, { method: 'PATCH' });

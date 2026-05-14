@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { GraduationCap, Network, ShieldCheck, Sparkles, Camera, ArrowRight, ArrowLeft, School, User, KeyRound, Mail, Phone, Lock, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { uploadFile, api } from '../api/client';
@@ -6,7 +6,7 @@ import { uploadFile, api } from '../api/client';
 type ForgotStep = 'input' | 'otp' | 'newpass' | 'done';
 
 export function AuthScreen() {
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [step, setStep] = useState(1); // 1=account, 2=schools, 3=profile pic & bio
   const [error, setError] = useState('');
@@ -40,6 +40,71 @@ export function AuthScreen() {
   const [accountAlert, setAccountAlert] = useState<{ type: string; message: string; email?: string; password?: string } | null>(null);
   const [appealReason, setAppealReason] = useState('');
   const [appealSubmitted, setAppealSubmitted] = useState(false);
+
+  // Google Sign-In
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    if (mode !== 'login') return;
+
+    // Load Google Identity Services script
+    const existingScript = document.getElementById('google-gsi');
+    if (!existingScript) {
+      const script = document.createElement('script');
+      script.id = 'google-gsi';
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initializeGoogle;
+      document.head.appendChild(script);
+    } else {
+      initializeGoogle();
+    }
+
+    function initializeGoogle() {
+      const clientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID;
+      if (!clientId || !(window as any).google?.accounts?.id) return;
+
+      (window as any).google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCallback,
+        auto_select: false,
+      });
+
+      if (googleBtnRef.current) {
+        googleBtnRef.current.innerHTML = '';
+        (window as any).google.accounts.id.renderButton(googleBtnRef.current, {
+          type: 'standard',
+          theme: 'filled_black',
+          size: 'large',
+          width: googleBtnRef.current.offsetWidth || 320,
+          text: 'signin_with',
+          shape: 'pill',
+        });
+      }
+    }
+  }, [mode]);
+
+  async function handleGoogleCallback(response: { credential: string }) {
+    setGoogleLoading(true);
+    setError('');
+    setAccountAlert(null);
+    try {
+      await loginWithGoogle(response.credential);
+    } catch (err: any) {
+      const msg = err.message || 'Google login failed';
+      if (msg.includes('suspended')) {
+        setAccountAlert({ type: 'suspended', message: msg });
+      } else if (msg.includes('deleted')) {
+        setAccountAlert({ type: 'deleted', message: msg });
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
 
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -305,6 +370,15 @@ export function AuthScreen() {
             <button type="button" className="forgot-link" onClick={startForgotPassword} style={{ marginTop: 4 }}>
               <KeyRound size={13} /> Forgotten password?
             </button>
+
+            {/* Google Sign-In */}
+            <div className="auth-divider">
+              <span>or</span>
+            </div>
+            <div ref={googleBtnRef} className="google-btn-container" />
+            {googleLoading && (
+              <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>Signing in with Google...</p>
+            )}
           </form>
         )}
 

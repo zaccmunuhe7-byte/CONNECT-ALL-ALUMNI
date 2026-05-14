@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Send, Paperclip, Mic, MicOff, Image, Trash2, StopCircle, Play, Pause } from 'lucide-react';
 import { api } from '../api/client';
 
